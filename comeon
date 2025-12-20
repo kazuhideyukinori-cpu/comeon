@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>卓球パーソナルレッスン | 試合で点が取れる卓球へ</title>
+  <meta name="description" content="広島県3冠王／全日本学生出場の実績をもとに、あなたの課題を言語化し最短ルートで上達へ導く卓球パーソナルレッスン。無料体験あり。" />
+
+  <style>
+    :root{
+      --bg:#0b0f14;
+      --card:#111826;
+      --text:#eaf0ff;
+      --muted:#b9c2d3;
+      --line:rgba(255,255,255,.08);
+      --accent:#4f7cff;
+      --accent2:#22c55e;
+      --danger:#ff4f6d;
+      --radius:18px;
+      --shadow: 0 14px 40px rgba(0,0,0,.35);
+      --max: 1080px;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans JP","Hiragino Kaku Gothic ProN","Meiryo", sans-serif;
+      background: radial-gradient(1000px 600px at 20% 0%, rgba(79,124,255,.22), transparent 55%),
+                  radial-gradient(900px 500px at 80% 10%, rgba(34,197,94,.18), transparent 60%),
+                  var(--bg);
+      color:var(--text);
+      line-height:1.7;
+    }
+    a{color:inherit}
+    .wrap{max-width:var(--max); margin:0 auto; padding:28px 18px 80px}
+    header{
+      position:sticky; top:0; z-index:20;
+      backdrop-filter: blur(10px);
+      background: rgba(11,15,20,.6);
+      border-bottom:1px solid var(--line);
+    }
+    .nav{
+      max-width:var(--max); margin:0 auto;
+      padding:12px 18px;
+      display:flex; align-items:center; justify-content:space-between; gap:12px;
+    }
+    .brand{
+      display:flex; align-items:center; gap:10px; font-weight:800; letter-spacing:.02em;
+    }
+    .logo{
+      width:38px; height:38px; border-radius:12px;
+      background: linear-gradient(135deg, rgba(79,124,255,1), rgba(34,197,94,1));
+      box-shadow: 0 10px 22px rgba(79,124,255,.25);
+    }
+    .nav a.btn{padding:10px 14px; border-radius:999px; text-decoration:none; font-weight:700;}
+    .btn{
+      display:inline-flex; align-items:center; justify-content:center; gap:8px;
+      border:1px solid var(--line);
+      background: rgba(255,255,255,.04);
+      color:var(--text);
+      padding:14px 18px;
+      border-radius:999px;
+      text-decoration:none;
+      font-weight:800;
+      transition: transform .08s ease, background .2s ease, border-color .2s ease;
+      cursor:pointer;
+    }
+    .btn:hover{transform: translateY(-1px); background: rgba(255,255,255,.07); border-color: rgba(255,255,255,.16)}
+    .btn.primary{background: linear-gradient(135deg, rgba(79,124,255,1), rgba(79,124,255,.75)); border-color: transparent}
+    .btn.primary:hover{background: linear-gradient(135deg, rgba(79,124,255,1), rgba(34,197,94,.75))}
+    .btn.green{background: linear-gradient(135deg, rgba(34,197,94,1), rgba(34,197,94,.7)); border-color: transparent}
+    .btn.danger{background: linear-gradient(135deg, rgba(255,79,109,1), rgba(255,79,109,.7)); border-color: transparent}
+
+    .hero{
+      padding:42px 0 18px;
+      display:grid;
+      grid-template-columns: 1.2fr .8fr;
+      gap:22px;
+      align-items:stretch;
+    }
+    @media (max-width:900px){ .hero{grid-template-columns:1fr} }
+
+    .card{
+      background: rgba(17,24,38,.72);
+      border:1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+    .heroMain{padding:28px}
+    .eyebrow{
+      display:inline-flex; gap:10px; flex-wrap:wrap;
+      color:var(--muted);
+      font-weight:700;
+    }
+    .pill{
+      border:1px solid var(--line);
+      padding:6px 10px;
+      border-radius:999px;
+      background: rgba(255,255,255,.03);
+      font-size:13px;
+    }
+    h1{
+      margin:12px 0 10px;
+      font-size: clamp(28px, 4.1vw, 44px);
+      line-height:1.2;
+      letter-spacing:.01em;
+    }
+    .lead{color:var(--muted); font-size:16px; margin:0 0 18px}
+    .ctaRow{display:flex; gap:10px; flex-wrap:wrap; margin-top:16px}
+    .mini{font-size:13px; color:var(--muted); margin-top:10px}
+    .heroSide{padding:22px; display:flex; flex-direction:column; gap:12px}
+    .stat{
+      padding:14px 14px;
+      border-radius: 14px;
+      border:1px solid var(--line);
+      background: rgba(255,255,255,.03);
+    }
+    .stat b{display:block; font-size:15px}
+    .stat span{color:var(--muted); font-size:13px}
+
+    section{margin-top:26px}
+    .secHead{display:flex; justify-content:space-between; align-items:flex-end; gap:12px; margin-bottom:10px}
+    h2{margin:0; font-size: clamp(20px, 2.5vw, 28px)}
+    .sub{margin:0; color:var(--muted)}
+    .grid{
+      display:grid; gap:12px;
+      grid-template-columns: repeat(3, 1fr);
+    }
+    @media (max-width:900px){ .grid{grid-template-columns:1fr} }
+    .item{padding:18px}
+    .item h3{margin:0 0 6px; font-size:18px}
+    .item p{margin:0; color:var(--muted)}
+    .list{
+      display:grid; gap:10px;
+      grid-template-columns: repeat(2, 1fr);
+    }
+    @media (max-width:900px){ .list{grid-template-columns:1fr} }
+    .bullet{
+      padding:14px 16px; border-radius:14px;
+      border:1px solid var(--line);
+      background: rgba(255,255,255,.03);
+      color:var(--muted);
+    }
+    .price{
+      display:grid; gap:12px;
+      grid-template-columns: 1fr 1fr;
+    }
+    @media (max-width:900px){ .price{grid-template-columns:1fr} }
+
+    .priceBox{padding:22px}
+    .tag{display:inline-block; font-size:12px; color:var(--muted); border:1px solid var(--line); padding:6px 10px; border-radius:999px}
+    .yen{font-size:34px; margin:8px 0 4px; font-weight:900}
+    .notes{color:var(--muted); margin:0}
+    ul{margin:10px 0 0 18px; color:var(--muted)}
+    li{margin:6px 0}
+
+    details{
+      border:1px solid var(--line);
+      background: rgba(255,255,255,.03);
+      border-radius:14px;
+      padding:14px 16px;
+    }
+    details + details{margin-top:10px}
+    summary{cursor:pointer; font-weight:800}
+    footer{
+      margin-top:28px;
+      color:var(--muted);
+      font-size:12px;
+      text-align:center;
+    }
+    .divider{
+      height:1px; background: var(--line);
+      margin: 18px 0;
+    }
+    .kicker{
+      color:var(--muted);
+      font-weight:700;
+      margin:0 0 10px;
+    }
+    .contactBox{
+      padding:22px;
+      display:grid; gap:12px;
+      grid-template-columns: 1fr 1fr;
+      align-items:center;
+    }
+    @media (max-width:900px){ .contactBox{grid-template-columns:1fr} }
+    .contactBox p{margin:0; color:var(--muted)}
+    .hide{display:none}
+    .toast{
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      max-width: 360px;
+      padding: 12px 14px;
+      background: rgba(17,24,38,.95);
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      color: var(--text);
+    }
+  </style>
+</head>
+
+<body>
+<header>
+  <div class="nav">
+    <div class="brand">
+      <div class="logo" aria-hidden="true"></div>
+      <div>卓球パーソナルレッスン</div>
+    </div>
+    <a class="btn primary" href="#trial">無料体験を申し込む</a>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="card heroMain">
+      <div class="eyebrow">
+        <span class="pill">完全個別</span>
+        <span class="pill">技術 × 戦術 × メンタル</span>
+        <span class="pill">都内近郊（出張相談可）</span>
+      </div>
+      <h1>“なんとなく打つ卓球”から卒業しませんか？<br>試合で点が取れる卓球へ。</h1>
+      <p class="lead">
+        広島県3冠王／全日本学生出場の実績をもとに、あなたの課題を「見える化」し、最短ルートで上達へ導く卓球パーソナルレッスンです。
+      </p>
+      <div class="ctaRow">
+        <a class="btn green" href="#trial">無料体験で「課題」と「伸び方」を知る</a>
+        <a class="btn" href="#price">料金を見る</a>
+      </div>
+      <p class="mini">※無理な勧誘は一切ありません。まずは現在地を把握するためにご利用ください。</p>
+    </div>
+
+    <div class="card heroSide">
+      <div class="stat">
+        <b>実績</b>
+        <span>広島県大会3冠王／全日本学生卓球選手権 出場</span>
+      </div>
+      <div class="stat">
+        <b>対象</b>
+        <span>初心者〜競技者（学生・社会人）</span>
+      </div>
+      <div class="stat">
+        <b>レッスンでやること</b>
+        <span>フォーム／戦術／試合運び／メンタルを「言語化」して再現性を作る</span>
+      </div>
+      <div class="stat">
+        <b>特典</b>
+        <span>練習メニュー作成・動画フィードバック・LINE相談</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- PAIN -->
+  <section id="pain">
+    <div class="secHead">
+      <div>
+        <h2>こんなお悩みありませんか？</h2>
+        <p class="sub">努力不足ではなく、“課題の整理不足”かもしれません。</p>
+      </div>
+    </div>
+
+    <div class="list">
+      <div class="bullet">練習しているのに、試合になると勝てない</div>
+      <div class="bullet">自分の何が悪いのか分からない</div>
+      <div class="bullet">フォームを直したいが、何が正解か分からない</div>
+      <div class="bullet">ワンパターンな卓球から抜け出せない</div>
+      <div class="bullet">メンタルが崩れて実力を出し切れない</div>
+      <div class="bullet">自主練のメニューが毎回迷子になる</div>
+    </div>
+  </section>
+
+  <!-- BENEFITS -->
+  <section id="benefits">
+    <div class="secHead">
+      <div>
+        <h2>このレッスンで得られること</h2>
+        <p class="sub">その場しのぎではなく、再現性のある成長を作ります。</p>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card item">
+        <h3>ミスの原因が明確になる</h3>
+        <p>「どこが」「なぜ」ミスになるかを言語化。直すべき順番が見えます。</p>
+      </div>
+      <div class="card item">
+        <h3>勝てる形が作れる</h3>
+        <p>サーブ〜3球目、ラリー戦、配球。点が取れるパターンを設計します。</p>
+      </div>
+      <div class="card item">
+        <h3>練習の質が上がる</h3>
+        <p>次の自主練が迷子にならない。あなた専用メニューを渡します。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONTENT -->
+  <section id="content">
+    <div class="secHead">
+      <div>
+        <h2>レッスン内容</h2>
+        <p class="sub">レベル別に最短の“伸びポイント”を押さえます。</p>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card item">
+        <h3>初心者</h3>
+        <p>ミスが減るフォームの土台を作り、「卓球が楽しくなる」段階まで丁寧にサポート。</p>
+      </div>
+      <div class="card item">
+        <h3>中級者</h3>
+        <p>勝てない原因を特定。サーブ・3球目と配球で“勝てる形”を作ります。</p>
+      </div>
+      <div class="card item">
+        <h3>上級者・競技者</h3>
+        <p>試合分析→課題抽出→再現まで落とし込み。相手別の勝ち筋を設計します。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- VOICE -->
+  <section id="voice">
+    <div class="secHead">
+      <div>
+        <h2>お客様の声</h2>
+        <p class="sub">「やることが明確になった」が一番多い感想です。</p>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card item">
+        <h3>大学生（競技者）</h3>
+        <p>自分では気づけなかったミスの原因が明確に。練習の再現性が上がり、試合内容が変わりました。</p>
+      </div>
+      <div class="card item">
+        <h3>社会人（経験者）</h3>
+        <p>フォームだけでなく考え方も教えてもらえるので、練習の質が一気に上がりました。</p>
+      </div>
+      <div class="card item">
+        <h3>高校生</h3>
+        <p>試合で緊張しても、やることが明確に。卓球が前より楽しいです。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRICE -->
+  <section id="price">
+    <div class="secHead">
+      <div>
+        <h2>料金</h2>
+        <p class="sub">1時間で終わらず、次の練習につながる設計です。</p>
+      </div>
+    </div>
+
+    <div class="price">
+      <div class="card priceBox">
+        <span class="tag">パーソナルレッスン</span>
+        <div class="yen">¥4,800 <span style="font-size:14px;color:var(--muted);font-weight:700">/ 1時間（税込）</span></div>
+        <p class="notes">その場で改善ポイントを言語化し、次の練習メニューまで渡します。</p>
+        <ul>
+          <li>個別課題の分析</li>
+          <li>フォーム・戦術指導</li>
+          <li>改善ポイント整理（メモ）</li>
+        </ul>
+      </div>
+
+      <div class="card priceBox">
+        <span class="tag">特典（無料）</span>
+        <ul>
+          <li>練習メニュー作成：迷わず自主練できる</li>
+          <li>動画フィードバック：改善点を見える化</li>
+          <li>LINE相談：詰まったら即解決</li>
+        </ul>
+        <div class="divider"></div>
+        <a class="btn green" href="#trial">無料体験で「課題」と「伸び方」を知る</a>
+        <p class="mini">※都度相談OK。継続プランの提案は希望がある場合のみ行います。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- TRIAL / CONTACT -->
+  <section id="trial">
+    <div class="secHead">
+      <div>
+        <h2>無料体験について</h2>
+        <p class="sub">あなたの卓球を見て「伸びるポイントを3つ」お伝えします。</p>
+      </div>
+    </div>
+
+    <div class="card contactBox">
+      <div>
+        <p class="kicker">無料体験で分かること</p>
+        <ul>
+          <li>フォームの改善点（ミスの原因）</li>
+          <li>点が取れない原因（戦術・配球）</li>
+          <li>今すぐやるべき練習（メニュー）</li>
+        </ul>
+        <p class="mini">※以下のフォームはデモです。運用では「LINEのURL」や「予約フォームURL」に差し替えてください。</p>
+      </div>
+
+      <form id="contactForm" class="card" style="padding:16px; background: rgba(255,255,255,.03); border:1px solid var(--line); border-radius:14px">
+        <label style="display:block; font-weight:800; margin-bottom:6px">お名前</label>
+        <input required name="name" style="width:100%; padding:12px 12px; border-radius:12px; border:1px solid var(--line); background: rgba(0,0,0,.2); color:var(--text);" />
+
+        <div style="height:10px"></div>
+
+        <label style="display:block; font-weight:800; margin-bottom:6px">連絡先（メール or LINE ID）</label>
+        <input required name="contact" style="width:100%; padding:12px 12px; border-radius:12px; border:1px solid var(--line); background: rgba(0,0,0,.2); color:var(--text);" />
+
+        <div style="height:10px"></div>
+
+        <label style="display:block; font-weight:800; margin-bottom:6px">一言（任意）</label>
+        <textarea name="msg" rows="3" style="width:100%; padding:12px 12px; border-radius:12px; border:1px solid var(--line); background: rgba(0,0,0,.2); color:var(--text);"></textarea>
+
+        <div style="height:12px"></div>
+
+        <button class="btn primary" type="submit" style="width:100%">送信（デモ）</button>
+        <p class="mini">送信すると「送信しました（デモ）」と表示されます。</p>
+      </form>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section id="faq">
+    <div class="secHead">
+      <div>
+        <h2>よくある質問</h2>
+        <p class="sub">不安を消してから、気持ちよく始めましょう。</p>
+      </div>
+    </div>
+
+    <details>
+      <summary>初心者でも大丈夫ですか？</summary>
+      <div class="mini">もちろん大丈夫です。基礎から丁寧に、できる形に落とし込みます。</div>
+    </details>
+    <details>
+      <summary>年齢制限はありますか？</summary>
+      <div class="mini">ありません。学生〜社会人まで幅広く対応しています。</div>
+    </details>
+    <details>
+      <summary>出張は可能ですか？</summary>
+      <div class="mini">都内近郊で対応可能です。場所・時間はご相談ください。</div>
+    </details>
+    <details>
+      <summary>継続プランの勧誘はありますか？</summary>
+      <div class="mini">無理な勧誘は一切ありません。必要だと感じた方にのみ、希望があればご案内します。</div>
+    </details>
+  </section>
+
+  <!-- FINAL CTA -->
+  <section>
+    <div class="card" style="padding:22px">
+      <h2 style="margin:0 0 6px">今の卓球を変えたいなら、行動を変えるだけ。</h2>
+      <p class="sub">まずは無料体験で「課題」と「伸び方」を整理しましょう。</p>
+      <div class="ctaRow">
+        <a class="btn green" href="#trial">無料体験を申し込む</a>
+        <a class="btn" href="#content">レッスン内容を見る</a>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div style="margin-top:22px; opacity:.7">© 卓球パーソナルレッスン</div>
+  </footer>
+
+</main>
+
+<div id="toast" class="toast hide">送信しました（デモ）✅</div>
+
+<script>
+  // デモ送信（実運用ではフォーム送信先に置き換え）
+  const form = document.getElementById('contactForm');
+  const toast = document.getElementById('toast');
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    toast.classList.remove('hide');
+    setTimeout(() => toast.classList.add('hide'), 2800);
+    form.reset();
+  });
+</script>
+</body>
+</html>
