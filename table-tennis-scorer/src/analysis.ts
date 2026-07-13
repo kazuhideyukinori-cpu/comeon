@@ -19,8 +19,16 @@ const PLAYBACK_RATE = 4; // 実時間の何倍速で読み進めるか
 const BREAK_MIN_LEN = 1.1;
 // これより短いラリー候補はノイズとして無視
 const RALLY_MIN_LEN = 0.5;
-// 活動量の下位何%を「低活動」とみなすか
+// ヒステリシス方式の閾値（下位/上位何%を「低活動」「高活動」とみなすか）。
+// 卓球の動き・打球音は瞬間的なスパイクになりやすく単一閾値だとノイズに弱いため、
+// 「一度は高活動を検知するまでラリー開始とみなさない／低活動が続くまで終了とみなさない」
+// という2段階の閾値で連続性を保つ。
 const LOW_ACTIVITY_PERCENTILE = 0.35;
+const HIGH_ACTIVITY_PERCENTILE = 0.6;
+// ヒステリシス方式で1件も見つからなかった場合のフォールバック（活動量のピークを
+// 一定間隔で拾う）のパラメータ
+const FALLBACK_MIN_GAP = 2.0;
+const FALLBACK_MAX_POINTS = 80;
 
 function normalize(arr: number[]): number[] {
   const max = Math.max(...arr, 1e-9);
@@ -210,9 +218,34 @@ async function scanVideo(url: string, onProgress: (label: string, frac: number) 
   });
 }
 
+interface Range {
+  start: number;
+  end: number;
+}
+
+/**
+ * 活動量のピーク（動き・音が最も強い瞬間）を一定間隔で拾うフォールバック。
+ * ヒステリシス方式で1件もラリーが検出できなかった場合に使う。閾値に依存せず
+ * 「相対的に活動が強い瞬間」を拾うだけなので、信号に何らかの変化がある限り
+ * 候補が0件になることはない。
+ */
+function pickActivityPeaks(activity: number[], duration: number, sampleTime: (i: number) => number): RallyCandidate[] {
+  const indexed = activity.map((score, i) => ({ score, t: sampleTime(i) }));
+  indexed.sort((a, b) => b.score - a.score);
+
+  const picked: number[] = [];
+  for (const cand of indexed) {
+    if (picked.length >= FALLBACK_MAX_POINTS) break;
+    if (picked.some((t) => Math.abs(t - cand.t) < FALLBACK_MIN_GAP)) continue;
+    picked.push(cand.t);
+  }
+  picked.sort((a, b) => a - b);
+  return picked.map((t) => ({ start: Math.max(0, t - 1), end: Math.min(duration, t + 0.3) }));
+}
+
 function detectRalliesFromCurves(curves: Curves, duration: number): RallyCandidate[] {
-  const motion = smooth(normalize(curves.motion));
-  const audioNorm = curves.audio ? normalize(smooth(curves.audio)) : null;
+  const motion = smooth(normalize(curves.motion), 2);
+  const audioNorm = curves.audio ? smooth(normalize(curves.audio), 2) : null;
   const len = audioNorm ? Math.min(motion.length, audioNorm.length) : motion.length;
   if (len === 0) return [];
 
@@ -223,38 +256,48 @@ function detectRalliesFromCurves(curves: Curves, duration: number): RallyCandida
   const sampleTime = (i: number) => Math.min(duration, i * SAMPLE_STEP);
 
   const sorted = [...activity].sort((a, b) => a - b);
-  const threshold = sorted[Math.floor(sorted.length * LOW_ACTIVITY_PERCENTILE)] ?? 0;
+  const lowThreshold = sorted[Math.floor(sorted.length * LOW_ACTIVITY_PERCENTILE)] ?? 0;
+  const highThreshold = sorted[Math.floor(sorted.length * HIGH_ACTIVITY_PERCENTILE)] ?? lowThreshold;
 
-  interface Range {
-    start: number;
-    end: number;
-  }
+  // ヒステリシス方式：一度「高活動」を検知したらラリー中とみなし、その後
+  // 「低活動」が BREAK_MIN_LEN 続くまではラリーが継続しているとみなす。
+  // 単一閾値だと瞬間的な動き・打球音のスパイクの合間（実際にはラリー継続中）を
+  // 誤って「間」と判定し、ラリーがぶつ切りになって短すぎるとして全滅する問題があった。
+  const rallies: Range[] = [];
+  let active = false;
+  let rallyStart = 0;
+  let quietStart: number | null = null;
 
-  // 低活動が一定時間以上続く区間＝「間（ま）」＝ラリー同士の境界
-  const breaks: Range[] = [];
-  let runStart: number | null = null;
   for (let i = 0; i < len; i++) {
-    const below = activity[i] <= threshold;
-    if (below && runStart === null) runStart = i;
-    if ((!below || i === len - 1) && runStart !== null) {
-      const runEnd = below ? i : i - 1;
-      const start = sampleTime(runStart);
-      const end = sampleTime(runEnd + 1);
-      if (end - start >= BREAK_MIN_LEN) breaks.push({ start, end });
-      runStart = null;
+    const t = sampleTime(i);
+    const v = activity[i];
+    if (!active) {
+      if (v >= highThreshold) {
+        active = true;
+        rallyStart = t;
+        quietStart = null;
+      }
+    } else if (v <= lowThreshold) {
+      if (quietStart === null) quietStart = t;
+      if (t - quietStart >= BREAK_MIN_LEN) {
+        rallies.push({ start: rallyStart, end: quietStart });
+        active = false;
+        quietStart = null;
+      }
+    } else {
+      quietStart = null;
     }
   }
-
-  // 「間」の補集合＝ラリー区間
-  const rallies: Range[] = [];
-  let cursor = 0;
-  for (const b of breaks) {
-    if (b.start > cursor) rallies.push({ start: cursor, end: b.start });
-    cursor = Math.max(cursor, b.end);
+  if (active) {
+    rallies.push({ start: rallyStart, end: duration });
   }
-  if (cursor < duration) rallies.push({ start: cursor, end: duration });
 
-  return rallies.filter((r) => r.end - r.start >= RALLY_MIN_LEN).map((r) => ({ start: r.start, end: r.end }));
+  const result = rallies.filter((r) => r.end - r.start >= RALLY_MIN_LEN);
+  if (result.length > 0) return result;
+
+  // ヒステリシス方式でも1件も見つからない場合（信号が弱い/ノイジーな映像など）は
+  // ピーク検出にフォールバックし、候補が0件のまま「全部手動」になる事態を避ける。
+  return pickActivityPeaks(activity, duration, sampleTime);
 }
 
 /**
