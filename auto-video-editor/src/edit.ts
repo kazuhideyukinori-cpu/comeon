@@ -5,7 +5,7 @@ let fontWritten = false;
 
 async function ensureFont(ff: FFmpeg) {
   if (fontWritten) return;
-  const fontResp = await fetch("/Anton.ttf");
+  const fontResp = await fetch(`${import.meta.env.BASE_URL}Anton.ttf`);
   await ff.writeFile("Anton.ttf", new Uint8Array(await fontResp.arrayBuffer()));
   fontWritten = true;
 }
