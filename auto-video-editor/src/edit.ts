@@ -42,29 +42,33 @@ function buildFilterGraph(segments: Segment[], audioSourceLabel: string): BuiltG
   const parts: string[] = [];
   let totalDuration = 0;
 
-  parts.push(`[0:v]scale='min(1280,iw)':-2,format=yuv420p,setsar=1[vpre]`);
-  const splitLabels = segments.map((_, i) => `[vs${i}]`).join("");
-  parts.push(`[vpre]split=${segments.length}${splitLabels}`);
-
   segments.forEach((seg, i) => {
     const speed = seg.isClimax ? 2.0 : 1.0; // setpts multiplier: 2.0 = half speed (slow-mo)
     const outDur = (seg.end - seg.start) * speed;
     totalDuration += outDur;
 
-    const capText = escapeDrawtext(seg.caption);
-    const fadeIn = 0.15;
-    const holdEnd = Math.max(fadeIn, Math.min(outDur - 0.3, 1.1));
-    const fadeOutStart = holdEnd;
-    const fadeOutEnd = Math.max(fadeOutStart + 0.01, Math.min(outDur, holdEnd + 0.3));
-
-    const vChain = [
-      `[vs${i}]trim=start=${seg.start}:end=${seg.end}`,
+    const vChainParts = [
+      `[0:v]trim=start=${seg.start}:end=${seg.end}`,
       `setpts=(PTS-STARTPTS)*${speed}`,
+      `scale='min(1280,iw)':-2`,
+      `format=yuv420p`,
+      `setsar=1`,
       `eq=contrast=1.16:saturation=1.4:brightness=0.02`,
       `vignette=PI/4`,
-      `drawtext=fontfile=Anton.ttf:text='${capText}':fontsize=52:fontcolor=white:borderw=4:bordercolor=black@0.7:x=(w-text_w)/2:y=h-150:alpha='if(lt(t\\,${fadeIn})\\,t/${fadeIn}\\,if(lt(t\\,${fadeOutStart})\\,1\\,if(lt(t\\,${fadeOutEnd})\\,(${fadeOutEnd}-t)/${(fadeOutEnd - fadeOutStart).toFixed(3)}\\,0)))'`,
-    ].join(",");
-    parts.push(`${vChain}[v${i}]`);
+    ];
+
+    if (seg.caption) {
+      const capText = escapeDrawtext(seg.caption);
+      const fadeIn = 0.15;
+      const holdEnd = Math.max(fadeIn, Math.min(outDur - 0.3, 1.1));
+      const fadeOutStart = holdEnd;
+      const fadeOutEnd = Math.max(fadeOutStart + 0.01, Math.min(outDur, holdEnd + 0.3));
+      vChainParts.push(
+        `drawtext=fontfile=Anton.ttf:text='${capText}':fontsize=52:fontcolor=white:borderw=4:bordercolor=black@0.7:x=(w-text_w)/2:y=h-150:alpha='if(lt(t\\,${fadeIn})\\,t/${fadeIn}\\,if(lt(t\\,${fadeOutStart})\\,1\\,if(lt(t\\,${fadeOutEnd})\\,(${fadeOutEnd}-t)/${(fadeOutEnd - fadeOutStart).toFixed(3)}\\,0)))'`
+      );
+    }
+
+    parts.push(`${vChainParts.join(",")}[v${i}]`);
 
     const aChain = [
       `${audioSourceLabel}atrim=start=${seg.start}:end=${seg.end}`,
@@ -103,6 +107,10 @@ export async function renderHighlight(
 
   const { filterComplex, totalDuration } = buildFilterGraph(segments, audioSourceLabel);
 
+  // single-threaded ffmpeg.wasm has no realtime headroom on long timelines,
+  // so trade a bit of quality for speed once the edit itself runs long
+  const preset = totalDuration > 180 ? "ultrafast" : "veryfast";
+
   const progressHandler = ({ progress }: { progress: number }) => {
     onProgress(Math.min(1, Math.max(0, progress)));
   };
@@ -120,7 +128,7 @@ export async function renderHighlight(
       "-c:v",
       "libx264",
       "-preset",
-      "veryfast",
+      preset,
       "-crf",
       "24",
       "-c:a",

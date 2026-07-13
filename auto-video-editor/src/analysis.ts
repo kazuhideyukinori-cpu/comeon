@@ -117,6 +117,159 @@ export async function getDuration(ff: FFmpeg, inputName: string): Promise<number
   return Number.isFinite(duration) && duration > 0 ? duration : 0;
 }
 
+const DEAD_ZONE_MIN_LEN = 6; // seconds, minimum contiguous low-activity duration worth cutting
+const MAX_CUT_FRACTION = 0.35; // never remove more than this fraction of the source
+const CAPTION_MIN_GAP = 20; // seconds between caption moments in full-length mode
+const MAX_CAPTIONS = 5;
+
+interface Window {
+  start: number;
+  end: number;
+  caption: string;
+  isClimax: boolean;
+}
+
+export async function analyzeFullLength(
+  ff: FFmpeg,
+  inputName: string,
+  duration: number,
+  onProgress: (label: string, frac: number) => void
+): Promise<Segment[]> {
+  if (duration <= SEGMENT_LEN + 0.5) {
+    return [{ start: 0, end: duration, score: 1, isClimax: true, caption: CLIMAX_CAPTION }];
+  }
+
+  onProgress("動画を解析中（動きを検出）…", 0.05);
+  const motionRaw = await computeMotionCurve(ff, inputName);
+
+  onProgress("音声を解析中…", 0.55);
+  const audioRaw = await computeAudioCurve(ff, inputName);
+
+  onProgress("構成を組み立て中…", 0.85);
+
+  const motion = smooth(normalize(motionRaw));
+  const audioNorm = audioRaw ? normalize(audioRaw) : null;
+  const len = audioNorm ? Math.min(motion.length, audioNorm.length) : motion.length;
+  const score: number[] = [];
+  for (let i = 0; i < len; i++) {
+    score.push(audioNorm ? 0.6 * motion[i] + 0.4 * audioNorm[i] : motion[i]);
+  }
+  const sampleTime = (i: number) => Math.min(duration, i * SAMPLE_STEP);
+
+  // adaptive "dead" threshold: bottom 20th percentile of activity
+  const sorted = [...score].sort((a, b) => a - b);
+  const deadThreshold = sorted[Math.floor(sorted.length * 0.2)] ?? 0;
+
+  interface Range {
+    start: number;
+    end: number;
+  }
+
+  const candidateDeadRanges: Range[] = [];
+  let runStart: number | null = null;
+  for (let i = 0; i < len; i++) {
+    const below = score[i] <= deadThreshold;
+    if (below && runStart === null) runStart = i;
+    if ((!below || i === len - 1) && runStart !== null) {
+      const runEnd = below ? i : i - 1;
+      const start = sampleTime(runStart);
+      const end = sampleTime(runEnd + 1);
+      if (end - start >= DEAD_ZONE_MIN_LEN) candidateDeadRanges.push({ start, end });
+      runStart = null;
+    }
+  }
+
+  candidateDeadRanges.sort((a, b) => b.end - b.start - (a.end - a.start));
+  const maxCutTotal = duration * MAX_CUT_FRACTION;
+  let cutTotal = 0;
+  const acceptedDead: Range[] = [];
+  for (const r of candidateDeadRanges) {
+    const rLen = r.end - r.start;
+    if (cutTotal + rLen > maxCutTotal) continue;
+    acceptedDead.push(r);
+    cutTotal += rLen;
+  }
+  acceptedDead.sort((a, b) => a.start - b.start);
+
+  // keep ranges = complement of the accepted dead ranges
+  const keepRanges: Range[] = [];
+  let cursor = 0;
+  for (const d of acceptedDead) {
+    if (d.start > cursor) keepRanges.push({ start: cursor, end: d.start });
+    cursor = Math.max(cursor, d.end);
+  }
+  if (cursor < duration) keepRanges.push({ start: cursor, end: duration });
+
+  const inKeep = (t: number) => keepRanges.some((r) => t >= r.start && t <= r.end);
+
+  // climax = single highest-scoring moment that survived the cuts
+  let climaxTime = duration / 2;
+  let climaxScore = -1;
+  for (let i = 0; i < len; i++) {
+    const t = sampleTime(i);
+    if (score[i] > climaxScore && inKeep(t)) {
+      climaxScore = score[i];
+      climaxTime = t;
+    }
+  }
+
+  // sparse caption moments: next-highest peaks, spaced apart, away from the climax
+  const indexed = score.map((s, i) => ({ s, t: sampleTime(i) })).filter((c) => inKeep(c.t));
+  indexed.sort((a, b) => b.s - a.s);
+  const captionTimes: number[] = [];
+  for (const cand of indexed) {
+    if (captionTimes.length >= MAX_CAPTIONS) break;
+    if (Math.abs(cand.t - climaxTime) < CAPTION_MIN_GAP) continue;
+    if (captionTimes.some((t) => Math.abs(t - cand.t) < CAPTION_MIN_GAP)) continue;
+    captionTimes.push(cand.t);
+  }
+
+  const windows: Window[] = [
+    {
+      start: Math.max(0, climaxTime - SEGMENT_LEN / 2),
+      end: Math.min(duration, climaxTime + SEGMENT_LEN / 2),
+      caption: CLIMAX_CAPTION,
+      isClimax: true,
+    },
+    ...captionTimes.map((t, i) => ({
+      start: Math.max(0, t - SEGMENT_LEN / 2),
+      end: Math.min(duration, t + SEGMENT_LEN / 2),
+      caption: CAPTIONS[i % CAPTIONS.length],
+      isClimax: false,
+    })),
+  ];
+
+  function splitPoints(range: Range): number[] {
+    const pts = new Set<number>([range.start, range.end]);
+    for (const w of windows) {
+      if (w.start > range.start && w.start < range.end) pts.add(w.start);
+      if (w.end > range.start && w.end < range.end) pts.add(w.end);
+    }
+    return [...pts].sort((a, b) => a - b);
+  }
+
+  const segments: Segment[] = [];
+  for (const range of keepRanges) {
+    const pts = splitPoints(range);
+    for (let i = 0; i < pts.length - 1; i++) {
+      const start = pts[i];
+      const end = pts[i + 1];
+      if (end - start < 0.05) continue;
+      const mid = (start + end) / 2;
+      const hitWindow = windows.find((w) => mid >= w.start && mid <= w.end);
+      segments.push({
+        start,
+        end,
+        score: hitWindow?.isClimax ? climaxScore : 0,
+        isClimax: !!hitWindow?.isClimax,
+        caption: hitWindow?.caption ?? "",
+      });
+    }
+  }
+
+  return segments;
+}
+
 export async function analyzeVideo(
   ff: FFmpeg,
   inputName: string,

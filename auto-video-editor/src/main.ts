@@ -1,8 +1,10 @@
 import "./style.css";
 import { fetchFile } from "@ffmpeg/util";
 import { getFFmpeg } from "./ffmpeg-client";
-import { analyzeVideo, getDuration } from "./analysis";
+import { analyzeVideo, analyzeFullLength, getDuration, type Segment } from "./analysis";
 import { renderHighlight, hasAudioStream } from "./edit";
+
+type Mode = "highlight" | "full";
 
 const dropzone = document.querySelector<HTMLElement>("#dropzone")!;
 const fileInput = document.querySelector<HTMLInputElement>("#file-input")!;
@@ -18,9 +20,12 @@ const progressFill = document.querySelector<HTMLElement>("#progress-fill")!;
 const progressStep = document.querySelector<HTMLElement>("#progress-step")!;
 const progressPct = document.querySelector<HTMLElement>("#progress-pct")!;
 const statusLine = document.querySelector<HTMLElement>("#status-line")!;
+const modeHighlightBtn = document.querySelector<HTMLButtonElement>("#mode-highlight")!;
+const modeFullBtn = document.querySelector<HTMLButtonElement>("#mode-full")!;
 
 let currentFile: File | null = null;
 let outputUrl: string | null = null;
+let selectedMode: Mode = "highlight";
 
 function setProgress(label: string, frac: number) {
   progressWrap.classList.remove("hidden");
@@ -28,6 +33,15 @@ function setProgress(label: string, frac: number) {
   progressFill.style.width = `${Math.round(frac * 100)}%`;
   progressPct.textContent = `${Math.round(frac * 100)}%`;
 }
+
+function setMode(mode: Mode) {
+  selectedMode = mode;
+  modeHighlightBtn.classList.toggle("active", mode === "highlight");
+  modeFullBtn.classList.toggle("active", mode === "full");
+}
+
+modeHighlightBtn.addEventListener("click", () => setMode("highlight"));
+modeFullBtn.addEventListener("click", () => setMode("full"));
 
 function loadFile(file: File) {
   currentFile = file;
@@ -88,6 +102,7 @@ runBtn.addEventListener("click", async () => {
   statusLine.textContent = "";
 
   const inputName = "input" + (currentFile.name.match(/\.[a-zA-Z0-9]+$/)?.[0] || ".mp4");
+  const isFull = selectedMode === "full";
 
   try {
     setProgress("エンジンを準備中…", 0);
@@ -100,9 +115,15 @@ runBtn.addEventListener("click", async () => {
     if (!duration) {
       throw new Error("動画の長さを取得できませんでした");
     }
+    if (isFull && duration > 180) {
+      setProgress("解析中…（長尺のため時間がかかります）", 0.1);
+    }
     const hasAudio = await hasAudioStream(ff, inputName);
 
-    const segments = await analyzeVideo(ff, inputName, duration, (label, frac) => setProgress(label, 0.1 + frac * 0.3));
+    const analyze = isFull ? analyzeFullLength : analyzeVideo;
+    const segments: Segment[] = await analyze(ff, inputName, duration, (label, frac) =>
+      setProgress(label, 0.1 + frac * 0.3)
+    );
 
     setProgress("カッコよく編集中…", 0.4);
     const blob = await renderHighlight(ff, inputName, hasAudio, segments, (frac) => {
@@ -118,7 +139,9 @@ runBtn.addEventListener("click", async () => {
     downloadLink.classList.remove("hidden");
 
     setProgress("完成！", 1);
-    statusLine.textContent = `${segments.length}カットのハイライトを自動生成しました 🎬`;
+    statusLine.textContent = isFull
+      ? `${segments.length}カットで全編を自動編集しました 🎬`
+      : `${segments.length}カットのハイライトを自動生成しました 🎬`;
   } catch (err) {
     console.error(err);
     statusLine.textContent = "編集中にエラーが発生しました。別の動画で試してみてください。";
