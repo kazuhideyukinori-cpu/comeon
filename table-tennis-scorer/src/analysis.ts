@@ -40,11 +40,23 @@ function smooth(arr: number[], radius = 1): number[] {
   });
 }
 
-async function computeMotionCurve(ff: FFmpeg, inputName: string): Promise<number[]> {
+interface Curves {
+  motion: number[];
+  audio: number[] | null;
+}
+
+/**
+ * 動き（フレーム差分）と音声エネルギーの両方を、1回のデコードで抽出する。
+ * 大きい動画（特にiPhoneのHEVC/Dolby Vision素材など）を2回フルデコードすると、
+ * Safariなどメモリ制限の厳しいブラウザでタブがクラッシュ・フリーズしやすいため、
+ * 単一の ffmpeg 呼び出しで両方の出力を同時に書き出す。
+ */
+async function computeCurves(ff: FFmpeg, inputName: string): Promise<Curves> {
   await ff.exec([
     "-i",
     inputName,
-    "-an",
+    "-map",
+    "0:v:0",
     "-vf",
     `fps=${(1 / SAMPLE_STEP).toFixed(4)},scale=${MOTION_W}:${MOTION_H}`,
     "-pix_fmt",
@@ -52,17 +64,26 @@ async function computeMotionCurve(ff: FFmpeg, inputName: string): Promise<number
     "-f",
     "rawvideo",
     "motion.raw",
+    "-map",
+    "0:a:0?",
+    "-ac",
+    "1",
+    "-ar",
+    `${AUDIO_SR}`,
+    "-f",
+    "s16le",
+    "audio.raw",
   ]);
-  const raw = (await ff.readFile("motion.raw")) as Uint8Array;
+
+  const motionRaw = (await ff.readFile("motion.raw")) as Uint8Array;
   await ff.deleteFile("motion.raw");
 
   const frameSize = MOTION_W * MOTION_H * 4;
-  const numFrames = Math.floor(raw.length / frameSize);
+  const numFrames = Math.floor(motionRaw.length / frameSize);
   const motion: number[] = [];
   let prev: Uint8Array | null = null;
-
   for (let f = 0; f < numFrames; f++) {
-    const frame = raw.subarray(f * frameSize, (f + 1) * frameSize);
+    const frame = motionRaw.subarray(f * frameSize, (f + 1) * frameSize);
     if (prev) {
       let diff = 0;
       for (let p = 0; p < frame.length; p += 4) {
@@ -74,36 +95,35 @@ async function computeMotionCurve(ff: FFmpeg, inputName: string): Promise<number
     }
     prev = frame;
   }
-  return motion;
-}
 
-async function computeAudioCurve(ff: FFmpeg, inputName: string): Promise<number[] | null> {
+  let audio: number[] | null = null;
   try {
-    await ff.exec(["-i", inputName, "-vn", "-ac", "1", "-ar", `${AUDIO_SR}`, "-f", "s16le", "audio.raw"]);
-    const raw = (await ff.readFile("audio.raw")) as Uint8Array;
+    const audioRaw = (await ff.readFile("audio.raw")) as Uint8Array;
     await ff.deleteFile("audio.raw");
-    if (raw.length < 2) return null;
-
-    const samples = new Int16Array(raw.buffer, raw.byteOffset, Math.floor(raw.length / 2));
-    const windowSize = Math.floor(AUDIO_SR * SAMPLE_STEP);
-    const steps = Math.max(1, Math.floor(samples.length / windowSize));
-    const energy: number[] = [];
-    for (let i = 0; i < steps; i++) {
-      const start = i * windowSize;
-      const end = Math.min(samples.length, start + windowSize);
-      let sum = 0;
-      let count = 0;
-      for (let s = start; s < end; s++) {
-        const v = samples[s] / 32768;
-        sum += v * v;
-        count++;
+    if (audioRaw.length >= 2) {
+      const samples = new Int16Array(audioRaw.buffer, audioRaw.byteOffset, Math.floor(audioRaw.length / 2));
+      const windowSize = Math.floor(AUDIO_SR * SAMPLE_STEP);
+      const steps = Math.max(1, Math.floor(samples.length / windowSize));
+      const energy: number[] = [];
+      for (let i = 0; i < steps; i++) {
+        const start = i * windowSize;
+        const end = Math.min(samples.length, start + windowSize);
+        let sum = 0;
+        let count = 0;
+        for (let s = start; s < end; s++) {
+          const v = samples[s] / 32768;
+          sum += v * v;
+          count++;
+        }
+        energy.push(Math.sqrt(sum / Math.max(1, count)));
       }
-      energy.push(Math.sqrt(sum / Math.max(1, count)));
+      audio = energy;
     }
-    return energy;
   } catch {
-    return null;
+    audio = null;
   }
+
+  return { motion, audio };
 }
 
 export async function getDuration(ff: FFmpeg, inputName: string): Promise<number> {
@@ -128,11 +148,8 @@ export async function detectRallies(
 ): Promise<RallyCandidate[]> {
   if (duration <= RALLY_MIN_LEN) return [];
 
-  onProgress("動画を解析中（動きを検出）…", 0.05);
-  const motionRaw = await computeMotionCurve(ff, inputName);
-
-  onProgress("音声を解析中…", 0.55);
-  const audioRaw = await computeAudioCurve(ff, inputName);
+  onProgress("動画を解析中（動き・音声を検出）…", 0.05);
+  const { motion: motionRaw, audio: audioRaw } = await computeCurves(ff, inputName);
 
   onProgress("ラリーの区切りを推定中…", 0.85);
 

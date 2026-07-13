@@ -24,6 +24,7 @@ const firstServerSelect = document.querySelector<HTMLSelectElement>("#first-serv
 const pointsToWinSelect = document.querySelector<HTMLSelectElement>("#points-to-win")!;
 const bestOfSelect = document.querySelector<HTMLSelectElement>("#best-of")!;
 const startAnalyzeBtn = document.querySelector<HTMLButtonElement>("#start-analyze-btn")!;
+const sizeWarning = document.querySelector<HTMLElement>("#size-warning")!;
 
 const setupSection = document.querySelector<HTMLElement>("#setup")!;
 const reviewSection = document.querySelector<HTMLElement>("#review")!;
@@ -393,6 +394,8 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+const LARGE_FILE_WARN_BYTES = 300 * 1024 * 1024; // 300MB
+
 function loadFile(file: File) {
   currentFile = file;
   if (videoURL) URL.revokeObjectURL(videoURL);
@@ -401,6 +404,17 @@ function loadFile(file: File) {
   matchForm.classList.remove("hidden");
   statusLine.textContent = "";
   dropzone.classList.add("hidden");
+
+  if (file.size > LARGE_FILE_WARN_BYTES) {
+    const mb = Math.round(file.size / (1024 * 1024));
+    sizeWarning.textContent =
+      `⚠ 動画サイズが約${mb}MBと大きめです。ブラウザ内で解析するため、処理に時間がかかったり、` +
+      `特にSafariやスマートフォンではメモリ不足で解析が止まる場合があります。短く分割する、` +
+      `解像度を下げてエクスポートする、またはPCのChromeなどで試すと安定しやすいです。`;
+    sizeWarning.classList.remove("hidden");
+  } else {
+    sizeWarning.classList.add("hidden");
+  }
 }
 
 pickBtn.addEventListener("click", (e) => {
@@ -516,7 +530,9 @@ startAnalyzeBtn.addEventListener("click", async () => {
     renderAll();
   } catch (err) {
     console.error(err);
-    statusLine.textContent = "解析中にエラーが発生しました。別の動画で試してみてください。";
+    statusLine.textContent =
+      "解析中にエラーが発生しました。動画が大きい場合はメモリ不足が原因のことがあります。" +
+      "動画を短く分割する、解像度を下げる、またはPCのChromeなどで試してみてください。";
   } finally {
     startAnalyzeBtn.disabled = false;
   }
