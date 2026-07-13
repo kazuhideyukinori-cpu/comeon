@@ -26,25 +26,6 @@ async function ensureFont(ff: FFmpeg) {
   fontWritten = true;
 }
 
-export async function hasAudioStream(ff: FFmpeg, inputName: string): Promise<boolean> {
-  await ff.ffprobe([
-    "-v",
-    "error",
-    "-select_streams",
-    "a",
-    "-show_entries",
-    "stream=index",
-    "-of",
-    "csv=p=0",
-    inputName,
-    "-o",
-    "has_audio.txt",
-  ]);
-  const data = (await ff.readFile("has_audio.txt")) as Uint8Array;
-  await ff.deleteFile("has_audio.txt");
-  return new TextDecoder().decode(data).trim().length > 0;
-}
-
 function escapeDrawtext(text: string): string {
   return text.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\\'");
 }

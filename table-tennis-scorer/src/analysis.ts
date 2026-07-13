@@ -1,14 +1,18 @@
-import type { FFmpeg } from "@ffmpeg/ffmpeg";
-
 export interface RallyCandidate {
   start: number; // ラリー開始（推定）
   end: number; // ラリー終了＝得点が入った瞬間の推定タイムスタンプ
 }
 
+export interface ScanResult {
+  duration: number;
+  hasAudio: boolean;
+  candidates: RallyCandidate[];
+}
+
 const MOTION_W = 32;
 const MOTION_H = 18;
-const SAMPLE_STEP = 0.25; // seconds between analysis samples（ポイント境界の精度を優先し短め）
-const AUDIO_SR = 8000;
+const SAMPLE_STEP = 0.3; // seconds between analysis samples
+const PLAYBACK_RATE = 4; // 実時間の何倍速で読み進めるか
 
 // ラリー間の「間」とみなす最低の低活動継続時間。卓球のプレー中の一瞬の静止より
 // 長く、得点後の球拾い・サーブ準備の間より短くなるよう調整。
@@ -45,116 +49,170 @@ interface Curves {
   audio: number[] | null;
 }
 
+interface VideoFrameCallbackMetadata {
+  mediaTime: number;
+}
+type RVFCVideo = HTMLVideoElement & {
+  requestVideoFrameCallback?: (cb: (now: number, metadata: VideoFrameCallbackMetadata) => void) => number;
+};
+
 /**
- * 動き（フレーム差分）と音声エネルギーの両方を、1回のデコードで抽出する。
- * 大きい動画（特にiPhoneのHEVC/Dolby Vision素材など）を2回フルデコードすると、
- * Safariなどメモリ制限の厳しいブラウザでタブがクラッシュ・フリーズしやすいため、
- * 単一の ffmpeg 呼び出しで両方の出力を同時に書き出す。
+ * <video> のネイティブ（ハードウェア）デコードと Web Audio API を使い、動画ファイル
+ * 全体をメモリに読み込むことなく、動き（フレーム差分）と音声エネルギーを1回の
+ * 再生パスで抽出する。
+ *
+ * 以前は ffmpeg.wasm でファイル全体をメモリに複製してソフトウェアデコードしていたが、
+ * 大きい動画（iPhoneのHEVC/Dolby Visionなど数百MB〜）だとその時点でSafari等のタブが
+ * クラッシュ・フリーズしていた。ブラウザ内蔵の再生パイプラインは通常ハードウェア
+ * デコードでファイル全体を保持せずにストリーミング処理できるため、これを回避する。
  */
-async function computeCurves(ff: FFmpeg, inputName: string): Promise<Curves> {
-  await ff.exec([
-    "-i",
-    inputName,
-    "-map",
-    "0:v:0",
-    "-vf",
-    `fps=${(1 / SAMPLE_STEP).toFixed(4)},scale=${MOTION_W}:${MOTION_H}`,
-    "-pix_fmt",
-    "rgba",
-    "-f",
-    "rawvideo",
-    "motion.raw",
-    "-map",
-    "0:a:0?",
-    "-ac",
-    "1",
-    "-ar",
-    `${AUDIO_SR}`,
-    "-f",
-    "s16le",
-    "audio.raw",
-  ]);
+async function scanVideo(url: string, onProgress: (label: string, frac: number) => void): Promise<{ duration: number; curves: Curves }> {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement("video") as RVFCVideo;
+    video.src = url;
+    video.muted = false; // ミュートにすると Web Audio 側にも音声データが流れなくなるブラウザがあるため false のままにする
+    video.playsInline = true;
+    video.preload = "auto";
+    video.style.position = "fixed";
+    video.style.left = "-9999px";
+    video.style.top = "0";
+    video.style.width = "2px";
+    video.style.height = "2px";
+    document.body.appendChild(video);
 
-  const motionRaw = (await ff.readFile("motion.raw")) as Uint8Array;
-  await ff.deleteFile("motion.raw");
+    const canvas = document.createElement("canvas");
+    canvas.width = MOTION_W;
+    canvas.height = MOTION_H;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D;
 
-  const frameSize = MOTION_W * MOTION_H * 4;
-  const numFrames = Math.floor(motionRaw.length / frameSize);
-  const motion: number[] = [];
-  let prev: Uint8Array | null = null;
-  for (let f = 0; f < numFrames; f++) {
-    const frame = motionRaw.subarray(f * frameSize, (f + 1) * frameSize);
-    if (prev) {
-      let diff = 0;
-      for (let p = 0; p < frame.length; p += 4) {
-        diff += Math.abs(frame[p] - prev[p]) + Math.abs(frame[p + 1] - prev[p + 1]) + Math.abs(frame[p + 2] - prev[p + 2]);
-      }
-      motion.push(diff);
-    } else {
-      motion.push(0);
+    const motion: number[] = [];
+    const audio: number[] = [];
+    let prevFrame: Uint8ClampedArray | null = null;
+    let nextSampleTime = 0;
+    let audioCtx: AudioContext | null = null;
+    let analyser: AnalyserNode | null = null;
+    let timeArray: Float32Array<ArrayBuffer> | null = null;
+    let hasAudioTrack = false;
+    let settled = false;
+
+    function cleanup() {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+      video.remove();
+      if (audioCtx) audioCtx.close().catch(() => {});
     }
-    prev = frame;
-  }
 
-  let audio: number[] | null = null;
-  try {
-    const audioRaw = (await ff.readFile("audio.raw")) as Uint8Array;
-    await ff.deleteFile("audio.raw");
-    if (audioRaw.length >= 2) {
-      const samples = new Int16Array(audioRaw.buffer, audioRaw.byteOffset, Math.floor(audioRaw.length / 2));
-      const windowSize = Math.floor(AUDIO_SR * SAMPLE_STEP);
-      const steps = Math.max(1, Math.floor(samples.length / windowSize));
-      const energy: number[] = [];
-      for (let i = 0; i < steps; i++) {
-        const start = i * windowSize;
-        const end = Math.min(samples.length, start + windowSize);
-        let sum = 0;
-        let count = 0;
-        for (let s = start; s < end; s++) {
-          const v = samples[s] / 32768;
-          sum += v * v;
-          count++;
+    function fail(err: unknown) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(err instanceof Error ? err : new Error(String(err)));
+    }
+
+    function succeed() {
+      if (settled) return;
+      settled = true;
+      const duration = video.duration;
+      cleanup();
+      resolve({ duration, curves: { motion, audio: hasAudioTrack ? audio : null } });
+    }
+
+    function sampleAt() {
+      ctx.drawImage(video, 0, 0, MOTION_W, MOTION_H);
+      const frame = ctx.getImageData(0, 0, MOTION_W, MOTION_H).data;
+      if (prevFrame) {
+        let diff = 0;
+        for (let p = 0; p < frame.length; p += 4) {
+          diff += Math.abs(frame[p] - prevFrame[p]) + Math.abs(frame[p + 1] - prevFrame[p + 1]) + Math.abs(frame[p + 2] - prevFrame[p + 2]);
         }
-        energy.push(Math.sqrt(sum / Math.max(1, count)));
+        motion.push(diff);
+      } else {
+        motion.push(0);
       }
-      audio = energy;
+      prevFrame = new Uint8ClampedArray(frame);
+
+      if (analyser && timeArray) {
+        analyser.getFloatTimeDomainData(timeArray);
+        let sum = 0;
+        for (let i = 0; i < timeArray.length; i++) sum += timeArray[i] * timeArray[i];
+        audio.push(Math.sqrt(sum / timeArray.length));
+      } else {
+        audio.push(0);
+      }
     }
-  } catch {
-    audio = null;
-  }
 
-  return { motion, audio };
+    video.addEventListener("error", () =>
+      fail(new Error("動画を読み込めませんでした。このブラウザ／端末では非対応の形式の可能性があります。"))
+    );
+
+    video.addEventListener(
+      "loadedmetadata",
+      () => {
+        try {
+          const AudioContextCtor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+          audioCtx = new AudioContextCtor();
+          const source = audioCtx.createMediaElementSource(video);
+          analyser = audioCtx.createAnalyser();
+          analyser.fftSize = 1024;
+          timeArray = new Float32Array(analyser.fftSize);
+          source.connect(analyser);
+          // audioCtx.destination には繋がない＝再生音は出ないが解析データは取得できる
+          hasAudioTrack = true;
+        } catch {
+          hasAudioTrack = false;
+        }
+        try {
+          video.playbackRate = PLAYBACK_RATE;
+        } catch {
+          // 倍速再生に対応していない場合は等倍のまま続行
+        }
+        video.play().catch(fail);
+      },
+      { once: true }
+    );
+
+    video.addEventListener("ended", succeed, { once: true });
+
+    function onFrame(_now: number, metadata: VideoFrameCallbackMetadata) {
+      if (settled) return;
+      const t = metadata.mediaTime;
+      if (t >= nextSampleTime) {
+        sampleAt();
+        nextSampleTime += SAMPLE_STEP;
+        const dur = video.duration;
+        onProgress("動画を解析中（動き・音声を検出）…", dur ? Math.min(0.95, t / dur) : 0);
+      }
+      if (!video.ended && video.requestVideoFrameCallback) {
+        video.requestVideoFrameCallback(onFrame);
+      }
+    }
+
+    function onFrameFallback() {
+      if (settled) return;
+      const t = video.currentTime;
+      if (t >= nextSampleTime) {
+        sampleAt();
+        nextSampleTime += SAMPLE_STEP;
+        const dur = video.duration;
+        onProgress("動画を解析中（動き・音声を検出）…", dur ? Math.min(0.95, t / dur) : 0);
+      }
+      if (!video.ended) {
+        requestAnimationFrame(onFrameFallback);
+      }
+    }
+
+    if (video.requestVideoFrameCallback) {
+      video.requestVideoFrameCallback(onFrame);
+    } else {
+      requestAnimationFrame(onFrameFallback);
+    }
+  });
 }
 
-export async function getDuration(ff: FFmpeg, inputName: string): Promise<number> {
-  await ff.ffprobe(["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", inputName, "-o", "dur.txt"]);
-  const data = (await ff.readFile("dur.txt")) as Uint8Array;
-  await ff.deleteFile("dur.txt");
-  const text = new TextDecoder().decode(data).trim();
-  const duration = parseFloat(text);
-  return Number.isFinite(duration) && duration > 0 ? duration : 0;
-}
-
-/**
- * 動画内の「動き」（フレーム差分）と「音の勢い」から、ラリーが続いている区間と
- * 途切れている区間（＝得点が決まって次のサーブまでの間）を推定する。
- * 戻り値の各要素の `end` を「得点が入った瞬間の候補」としてレビューUIに渡す。
- */
-export async function detectRallies(
-  ff: FFmpeg,
-  inputName: string,
-  duration: number,
-  onProgress: (label: string, frac: number) => void
-): Promise<RallyCandidate[]> {
-  if (duration <= RALLY_MIN_LEN) return [];
-
-  onProgress("動画を解析中（動き・音声を検出）…", 0.05);
-  const { motion: motionRaw, audio: audioRaw } = await computeCurves(ff, inputName);
-
-  onProgress("ラリーの区切りを推定中…", 0.85);
-
-  const motion = smooth(normalize(motionRaw));
-  const audioNorm = audioRaw ? normalize(smooth(audioRaw)) : null;
+function detectRalliesFromCurves(curves: Curves, duration: number): RallyCandidate[] {
+  const motion = smooth(normalize(curves.motion));
+  const audioNorm = curves.audio ? normalize(smooth(curves.audio)) : null;
   const len = audioNorm ? Math.min(motion.length, audioNorm.length) : motion.length;
   if (len === 0) return [];
 
@@ -196,7 +254,28 @@ export async function detectRallies(
   }
   if (cursor < duration) rallies.push({ start: cursor, end: duration });
 
-  return rallies
-    .filter((r) => r.end - r.start >= RALLY_MIN_LEN)
-    .map((r) => ({ start: r.start, end: r.end }));
+  return rallies.filter((r) => r.end - r.start >= RALLY_MIN_LEN).map((r) => ({ start: r.start, end: r.end }));
+}
+
+/**
+ * 動画ファイルを解析し、動画の長さ・音声の有無・ラリー区切り（得点候補）を返す。
+ * ffmpeg は使わず、ブラウザのネイティブ再生機能のみで完結する。
+ */
+export async function analyzeVideoFile(file: File, onProgress: (label: string, frac: number) => void): Promise<ScanResult> {
+  const url = URL.createObjectURL(file);
+  try {
+    onProgress("動画を読み込み中…", 0.02);
+    const { duration, curves } = await scanVideo(url, onProgress);
+
+    if (!duration || !Number.isFinite(duration)) {
+      throw new Error("動画の長さを取得できませんでした");
+    }
+
+    onProgress("ラリーの区切りを推定中…", 0.96);
+    const candidates = duration <= RALLY_MIN_LEN ? [] : detectRalliesFromCurves(curves, duration);
+
+    return { duration, hasAudio: curves.audio !== null, candidates };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }

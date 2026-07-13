@@ -2,9 +2,9 @@ import "./style.css";
 import { fetchFile } from "@ffmpeg/util";
 import type { FFmpeg } from "@ffmpeg/ffmpeg";
 import { getFFmpeg } from "./ffmpeg-client";
-import { detectRallies, getDuration, type RallyCandidate } from "./analysis";
+import { analyzeVideoFile, type RallyCandidate } from "./analysis";
 import { replayMatch, type MatchConfig, type PointEvent, type Side } from "./scoring";
-import { asciiPlayerLabels, hasAudioStream, renderScoredVideo } from "./export";
+import { asciiPlayerLabels, renderScoredVideo } from "./export";
 
 type CandidateStatus = "pending" | "confirmed" | "skipped";
 
@@ -408,9 +408,9 @@ function loadFile(file: File) {
   if (file.size > LARGE_FILE_WARN_BYTES) {
     const mb = Math.round(file.size / (1024 * 1024));
     sizeWarning.textContent =
-      `⚠ 動画サイズが約${mb}MBと大きめです。ブラウザ内で解析するため、処理に時間がかかったり、` +
-      `特にSafariやスマートフォンではメモリ不足で解析が止まる場合があります。短く分割する、` +
-      `解像度を下げてエクスポートする、またはPCのChromeなどで試すと安定しやすいです。`;
+      `⚠ 動画サイズが約${mb}MBと大きめです。ラリー検出はブラウザの動画再生機能だけで行うため通常は問題ありませんが、` +
+      `最後の「スコア付き動画を書き出す」機能は今も動画全体をメモリに読み込むため、時間がかかったり` +
+      `メモリ不足で失敗する場合があります。JSON/CSVでの得点履歴出力は影響を受けません。`;
     sizeWarning.classList.remove("hidden");
   } else {
     sizeWarning.classList.add("hidden");
@@ -496,22 +496,11 @@ startAnalyzeBtn.addEventListener("click", async () => {
   };
 
   try {
-    setProgress("エンジンを準備中…", 0);
-    ff = await getFFmpeg();
+    const result = await analyzeVideoFile(currentFile, (label, frac) => setProgress(label, frac));
+    duration = result.duration;
+    hasAudio = result.hasAudio;
 
-    setProgress("動画を読み込み中…", 0.05);
-    inputName = "input" + (currentFile.name.match(/\.[a-zA-Z0-9]+$/)?.[0] || ".mp4");
-    await ff.writeFile(inputName, await fetchFile(currentFile));
-
-    duration = await getDuration(ff, inputName);
-    if (!duration) {
-      throw new Error("動画の長さを取得できませんでした");
-    }
-    hasAudio = await hasAudioStream(ff, inputName);
-
-    const rallies = await detectRallies(ff, inputName, duration, (label, frac) => setProgress(label, 0.1 + frac * 0.85));
-
-    candidates = rallies.map((r, i) => ({ ...r, id: `cand-${i}`, status: "pending" as CandidateStatus, winner: null }));
+    candidates = result.candidates.map((r, i) => ({ ...r, id: `cand-${i}`, status: "pending" as CandidateStatus, winner: null }));
     manualPoints = [];
     reviewIndex = candidates.findIndex((c) => c.status === "pending");
     if (reviewIndex < 0) reviewIndex = 0;
@@ -530,9 +519,10 @@ startAnalyzeBtn.addEventListener("click", async () => {
     renderAll();
   } catch (err) {
     console.error(err);
-    statusLine.textContent =
-      "解析中にエラーが発生しました。動画が大きい場合はメモリ不足が原因のことがあります。" +
-      "動画を短く分割する、解像度を下げる、またはPCのChromeなどで試してみてください。";
+    const message = err instanceof Error ? err.message : "";
+    statusLine.textContent = message
+      ? `解析中にエラーが発生しました：${message}`
+      : "解析中にエラーが発生しました。このブラウザ／端末では動画形式が非対応の可能性があります。別の動画やブラウザで試してみてください。";
   } finally {
     startAnalyzeBtn.disabled = false;
   }
@@ -585,9 +575,16 @@ exportCsvBtn.addEventListener("click", () => {
 });
 
 exportVideoBtn.addEventListener("click", async () => {
-  if (!ff || !inputName) return;
+  if (!currentFile) return;
   exportVideoBtn.disabled = true;
   try {
+    setExportProgress("動画を書き出し用に読み込み中…", 0);
+    if (!ff) ff = await getFFmpeg();
+    if (!inputName) {
+      inputName = "input" + (currentFile.name.match(/\.[a-zA-Z0-9]+$/)?.[0] || ".mp4");
+      await ff.writeFile(inputName, await fetchFile(currentFile));
+    }
+
     setExportProgress("スコアボードを焼き込み中…", 0);
     const points = getAllPoints();
     const labels = asciiPlayerLabels(names.A, names.B);
@@ -603,7 +600,9 @@ exportVideoBtn.addEventListener("click", async () => {
     setExportProgress("完成！", 1);
   } catch (err) {
     console.error(err);
-    statusLine.textContent = "動画の書き出し中にエラーが発生しました。";
+    statusLine.textContent =
+      "動画の書き出し中にエラーが発生しました。動画が大きい場合はメモリ不足が原因のことがあります。" +
+      "JSON/CSVでの得点履歴出力はこの問題の影響を受けません。";
   } finally {
     exportVideoBtn.disabled = false;
   }
