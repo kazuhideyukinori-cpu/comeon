@@ -13,7 +13,7 @@ export async function getFFmpeg(onLog?: (msg: string) => void): Promise<FFmpeg> 
     if (onLog) {
       instance.on("log", ({ message }) => onLog(message));
     }
-    const baseURL = `${location.origin}/ffmpeg`;
+    const baseURL = new URL(`${import.meta.env.BASE_URL}ffmpeg/`, document.baseURI).href.replace(/\/$/, "");
     await instance.load({
       coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
       wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
