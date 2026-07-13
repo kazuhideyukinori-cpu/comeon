@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AUTO CUT — 全自動ハイライト動画編集</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">⚡</span>
+          <span class="brand-name">AUTO CUT</span>
+        </div>
+        <p class="tagline">動画をアップするだけで、スポーツハイライト風に全自動編集</p>
+      </header>
+
+      <main class="stage">
+        <section id="dropzone" class="dropzone">
+          <input id="file-input" type="file" accept="video/*" hidden />
+          <div class="dropzone-inner">
+            <div class="dropzone-icon">🎬</div>
+            <p class="dropzone-title">動画をドロップ、またはクリックして選択</p>
+            <p class="dropzone-sub">mp4 / mov / webm 対応・すべてブラウザ内で処理（アップロード先サーバーなし）</p>
+            <button id="pick-btn" class="btn btn-primary" type="button">動画を選ぶ</button>
+          </div>
+        </section>
+
+        <section id="workspace" class="workspace hidden">
+          <div class="preview-grid">
+            <div class="preview-card">
+              <h3>BEFORE</h3>
+              <video id="src-video" controls playsinline></video>
+            </div>
+            <div class="preview-card">
+              <h3>AFTER <span class="badge">AUTO EDIT</span></h3>
+              <video id="out-video" controls playsinline></video>
+              <a id="download-link" class="btn btn-secondary hidden" download="auto-cut.mp4">ダウンロード</a>
+            </div>
+          </div>
+
+          <div class="controls">
+            <button id="run-btn" class="btn btn-primary btn-large" type="button">
+              <span class="btn-icon">⚡</span> カッコよく自動編集する
+            </button>
+            <button id="reset-btn" class="btn btn-ghost" type="button">別の動画を選ぶ</button>
+          </div>
+
+          <div id="progress-wrap" class="progress-wrap hidden">
+            <div class="progress-label">
+              <span id="progress-step">解析中…</span>
+              <span id="progress-pct">0%</span>
+            </div>
+            <div class="progress-bar">
+              <div id="progress-fill" class="progress-fill"></div>
+            </div>
+          </div>
+
+          <p id="status-line" class="status-line"></p>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <p>処理はすべてこの端末（ブラウザ）内で完結します。動画がどこにも送信されません。</p>
+      </footer>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
