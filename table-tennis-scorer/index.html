@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>卓球オートスコア — 動画から自動で採点</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">🏓</span>
+          <span class="brand-name">卓球オートスコア</span>
+        </div>
+        <p class="tagline">試合動画をアップすると、ラリーの区切りをAIが検出。得点は確認するだけでOK。</p>
+      </header>
+
+      <main class="stage">
+        <section id="setup" class="setup">
+          <section id="dropzone" class="dropzone">
+            <input id="file-input" type="file" accept="video/*" hidden />
+            <div class="dropzone-inner">
+              <div class="dropzone-icon">🎥</div>
+              <p class="dropzone-title">試合動画をドロップ、またはクリックして選択</p>
+              <p class="dropzone-sub">mp4 / mov / webm 対応・すべてブラウザ内で処理（アップロード先サーバーなし）</p>
+              <button id="pick-btn" class="btn btn-primary" type="button">動画を選ぶ</button>
+            </div>
+          </section>
+
+          <form id="match-form" class="match-form hidden">
+            <h3 class="form-heading">試合の設定</h3>
+            <div class="form-row">
+              <label class="form-field">
+                選手A の名前
+                <input id="player-a-name" type="text" value="選手A" maxlength="20" />
+              </label>
+              <label class="form-field">
+                選手B の名前
+                <input id="player-b-name" type="text" value="選手B" maxlength="20" />
+              </label>
+            </div>
+            <div class="form-row">
+              <label class="form-field">
+                最初のサーブ
+                <select id="first-server">
+                  <option value="A">選手A</option>
+                  <option value="B">選手B</option>
+                </select>
+              </label>
+              <label class="form-field">
+                1ゲーム何点先取
+                <select id="points-to-win">
+                  <option value="11" selected>11点（通常ルール）</option>
+                  <option value="21">21点</option>
+                </select>
+              </label>
+              <label class="form-field">
+                マッチ形式
+                <select id="best-of">
+                  <option value="1">1ゲームのみ</option>
+                  <option value="3">3本勝負（2ゲーム先取）</option>
+                  <option value="5" selected>5本勝負（3ゲーム先取）</option>
+                  <option value="7">7本勝負（4ゲーム先取）</option>
+                </select>
+              </label>
+            </div>
+            <button id="start-analyze-btn" class="btn btn-primary btn-large" type="button">
+              <span class="btn-icon">🔍</span> 動画を解析してラリーを検出する
+            </button>
+          </form>
+
+          <div id="progress-wrap" class="progress-wrap hidden">
+            <div class="progress-label">
+              <span id="progress-step">解析中…</span>
+              <span id="progress-pct">0%</span>
+            </div>
+            <div class="progress-bar">
+              <div id="progress-fill" class="progress-fill"></div>
+            </div>
+          </div>
+
+          <p id="status-line" class="status-line"></p>
+        </section>
+
+        <section id="review" class="review hidden">
+          <div class="scoreboard-panel">
+            <div class="score-side">
+              <span id="score-name-a" class="score-name">選手A</span>
+              <span id="serve-dot-a" class="serve-dot hidden">●</span>
+              <span id="score-value-a" class="score-value">0</span>
+            </div>
+            <div class="score-mid">
+              <span id="game-label" class="game-label">GAME 1</span>
+              <span id="games-won" class="games-won">0 - 0</span>
+            </div>
+            <div class="score-side score-side-b">
+              <span id="score-value-b" class="score-value">0</span>
+              <span id="serve-dot-b" class="serve-dot hidden">●</span>
+              <span id="score-name-b" class="score-name">選手B</span>
+            </div>
+          </div>
+          <p id="match-winner-banner" class="match-winner-banner hidden"></p>
+
+          <video id="video" controls playsinline></video>
+
+          <div class="timeline-wrap">
+            <div id="timeline" class="timeline">
+              <div id="playhead" class="playhead"></div>
+            </div>
+            <p class="timeline-legend">
+              <span class="legend-dot legend-pending"></span>未確認
+              <span class="legend-dot legend-confirmed"></span>確定
+              <span class="legend-dot legend-skipped"></span>得点ではない
+              <span class="legend-dot legend-manual"></span>手動追加
+            </p>
+          </div>
+
+          <div id="candidate-card" class="candidate-card">
+            <p class="candidate-title">
+              ラリー候補 <span id="candidate-index">0</span> / <span id="candidate-total">0</span>
+              （<span id="candidate-time">0:00</span> 付近で終了）
+            </p>
+            <p id="candidate-status" class="candidate-status"></p>
+            <div class="candidate-actions">
+              <button id="preview-btn" class="btn btn-ghost" type="button">▶ この前後を再生</button>
+              <button id="assign-a-btn" class="btn btn-primary" type="button">選手Aの得点 <kbd>A</kbd></button>
+              <button id="assign-b-btn" class="btn btn-primary" type="button">選手Bの得点 <kbd>B</kbd></button>
+              <button id="skip-btn" class="btn btn-ghost" type="button">得点ではない <kbd>S</kbd></button>
+              <button id="undo-candidate-btn" class="btn btn-ghost" type="button">取り消して未確認に戻す</button>
+            </div>
+            <div class="candidate-nav">
+              <button id="prev-candidate-btn" class="btn btn-ghost" type="button"><kbd>←</kbd> 前の候補</button>
+              <button id="next-candidate-btn" class="btn btn-ghost" type="button">次の候補 <kbd>→</kbd></button>
+            </div>
+          </div>
+
+          <div class="manual-add">
+            <p class="manual-add-label">AIが見逃したラリーは、再生位置を合わせて手動追加できます</p>
+            <button id="manual-add-a-btn" class="btn btn-secondary" type="button">＋現在位置でAの得点を追加</button>
+            <button id="manual-add-b-btn" class="btn btn-secondary" type="button">＋現在位置でBの得点を追加</button>
+          </div>
+
+          <div class="point-log">
+            <h3>得点ログ</h3>
+            <ul id="point-log-list" class="point-log-list"></ul>
+          </div>
+
+          <div class="export-panel">
+            <h3>書き出し</h3>
+            <div class="export-buttons">
+              <button id="export-json-btn" class="btn btn-secondary" type="button">JSONでダウンロード</button>
+              <button id="export-csv-btn" class="btn btn-secondary" type="button">CSVでダウンロード</button>
+              <button id="export-video-btn" class="btn btn-primary btn-large" type="button">
+                <span class="btn-icon">🎬</span> スコア付き動画を書き出す
+              </button>
+            </div>
+            <p class="option-note">
+              動画に焼き込むスコアボードの選手名は、同梱フォントの都合上、半角英数字のみ表示されます（日本語名は自動でA/Bと表示）。
+            </p>
+            <div id="export-progress-wrap" class="progress-wrap hidden">
+              <div class="progress-label">
+                <span id="export-progress-step">書き出し中…</span>
+                <span id="export-progress-pct">0%</span>
+              </div>
+              <div class="progress-bar">
+                <div id="export-progress-fill" class="progress-fill"></div>
+              </div>
+            </div>
+            <video id="out-video" class="hidden" controls playsinline></video>
+            <a id="download-link" class="btn btn-secondary hidden" download="table-tennis-scored.mp4">動画をダウンロード</a>
+          </div>
+
+          <button id="reset-btn" class="btn btn-ghost" type="button">別の動画を選ぶ</button>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <p>処理はすべてこの端末（ブラウザ）内で完結します。動画がどこにも送信されません。AIによる検出は目安です。必ず内容を確認してください。</p>
+      </footer>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
