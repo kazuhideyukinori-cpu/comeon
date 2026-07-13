@@ -42,7 +42,10 @@ function loadFile(file: File) {
   runBtn.disabled = false;
 }
 
-pickBtn.addEventListener("click", () => fileInput.click());
+pickBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  fileInput.click();
+});
 dropzone.addEventListener("click", () => fileInput.click());
 
 fileInput.addEventListener("change", () => {
