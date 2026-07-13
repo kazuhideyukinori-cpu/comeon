@@ -2,7 +2,7 @@ import "./style.css";
 import { fetchFile } from "@ffmpeg/util";
 import { getFFmpeg } from "./ffmpeg-client";
 import { analyzeVideo, analyzeFullLength, getDuration, type Segment } from "./analysis";
-import { renderHighlight, hasAudioStream } from "./edit";
+import { renderHighlight, hasAudioStream, type BgmStyle } from "./edit";
 
 type Mode = "highlight" | "full";
 
@@ -22,10 +22,17 @@ const progressPct = document.querySelector<HTMLElement>("#progress-pct")!;
 const statusLine = document.querySelector<HTMLElement>("#status-line")!;
 const modeHighlightBtn = document.querySelector<HTMLButtonElement>("#mode-highlight")!;
 const modeFullBtn = document.querySelector<HTMLButtonElement>("#mode-full")!;
+const bgmToggle = document.querySelector<HTMLInputElement>("#bgm-toggle")!;
+const bgmStyleSelect = document.querySelector<HTMLSelectElement>("#bgm-style")!;
+const seToggle = document.querySelector<HTMLInputElement>("#se-toggle")!;
 
 let currentFile: File | null = null;
 let outputUrl: string | null = null;
 let selectedMode: Mode = "highlight";
+
+bgmToggle.addEventListener("change", () => {
+  bgmStyleSelect.disabled = !bgmToggle.checked;
+});
 
 function setProgress(label: string, frac: number) {
   progressWrap.classList.remove("hidden");
@@ -125,8 +132,13 @@ runBtn.addEventListener("click", async () => {
       setProgress(label, 0.1 + frac * 0.3)
     );
 
+    const audioOptions = {
+      bgm: bgmToggle.checked ? (bgmStyleSelect.value as BgmStyle) : null,
+      se: seToggle.checked,
+    };
+
     setProgress("カッコよく編集中…", 0.4);
-    const blob = await renderHighlight(ff, inputName, hasAudio, segments, (frac) => {
+    const blob = await renderHighlight(ff, inputName, hasAudio, segments, audioOptions, (frac) => {
       setProgress("カッコよく編集中…", 0.4 + frac * 0.6);
     });
 
@@ -138,10 +150,12 @@ runBtn.addEventListener("click", async () => {
     downloadLink.href = outputUrl;
     downloadLink.classList.remove("hidden");
 
+    const extras = [audioOptions.bgm ? "BGM" : null, audioOptions.se ? "効果音" : null].filter(Boolean).join("・");
     setProgress("完成！", 1);
-    statusLine.textContent = isFull
-      ? `${segments.length}カットで全編を自動編集しました 🎬`
-      : `${segments.length}カットのハイライトを自動生成しました 🎬`;
+    statusLine.textContent =
+      (isFull
+        ? `${segments.length}カットで全編を自動編集しました`
+        : `${segments.length}カットのハイライトを自動生成しました`) + (extras ? `（テロップ・${extras}付き）🎬` : "（テロップ付き）🎬");
   } catch (err) {
     console.error(err);
     statusLine.textContent = "編集中にエラーが発生しました。別の動画で試してみてください。";
