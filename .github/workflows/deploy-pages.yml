@@ -1,10 +1,11 @@
-name: Deploy AUTO CUT to GitHub Pages
+name: Deploy apps to GitHub Pages
 
 on:
   push:
     branches: [main]
     paths:
       - "auto-video-editor/**"
+      - "table-tennis-scorer/**"
       - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
@@ -20,24 +21,41 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: auto-video-editor
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: auto-video-editor/package-lock.json
-      - run: npm ci
-      - run: npm run build
+          cache-dependency-path: |
+            auto-video-editor/package-lock.json
+            table-tennis-scorer/package-lock.json
+
+      - name: Build AUTO CUT
+        working-directory: auto-video-editor
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build 卓球オートスコア
+        working-directory: table-tennis-scorer
+        run: |
+          npm ci
+          npm run build
+
+      - name: Assemble combined site
+        run: |
+          mkdir -p site
+          cp -r auto-video-editor/dist/. site/
+          mkdir -p site/table-tennis-scorer
+          cp -r table-tennis-scorer/dist/. site/table-tennis-scorer/
+
       - uses: actions/configure-pages@v5
         with:
           enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: auto-video-editor/dist
+          path: site
 
   deploy:
     needs: build
