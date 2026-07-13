@@ -51,6 +51,23 @@
             </button>
           </div>
 
+          <div class="audio-options">
+            <label class="option-row">
+              <input id="bgm-toggle" type="checkbox" checked />
+              <span class="option-label">🎵 BGM を自動で追加</span>
+              <select id="bgm-style" class="style-select">
+                <option value="energetic">エナジー</option>
+                <option value="chill">チル</option>
+                <option value="epic">エピック</option>
+              </select>
+            </label>
+            <label class="option-row">
+              <input id="se-toggle" type="checkbox" checked />
+              <span class="option-label">🔊 効果音（カット音・決めのヒット音）を追加</span>
+            </label>
+            <p class="option-note">テロップは全モード共通で自動生成されます。BGM・効果音はブラウザ内で自動作曲・合成した音源です。</p>
+          </div>
+
           <div class="controls">
             <button id="run-btn" class="btn btn-primary btn-large" type="button">
               <span class="btn-icon">⚡</span> カッコよく自動編集する
