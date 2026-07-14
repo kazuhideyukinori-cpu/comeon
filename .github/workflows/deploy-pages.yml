@@ -6,6 +6,7 @@ on:
     paths:
       - "auto-video-editor/**"
       - "table-tennis-scorer/**"
+      - "lesson-sales-entry/**"
       - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
@@ -30,6 +31,7 @@ jobs:
           cache-dependency-path: |
             auto-video-editor/package-lock.json
             table-tennis-scorer/package-lock.json
+            lesson-sales-entry/package-lock.json
 
       - name: Build AUTO CUT
         working-directory: auto-video-editor
@@ -43,12 +45,20 @@ jobs:
           npm ci
           npm run build
 
+      - name: Build レッスン売上入力
+        working-directory: lesson-sales-entry
+        run: |
+          npm ci
+          npm run build
+
       - name: Assemble combined site
         run: |
           mkdir -p site
           cp -r auto-video-editor/dist/. site/
           mkdir -p site/table-tennis-scorer
           cp -r table-tennis-scorer/dist/. site/table-tennis-scorer/
+          mkdir -p site/lesson-sales-entry
+          cp -r lesson-sales-entry/dist/. site/lesson-sales-entry/
 
       - uses: actions/configure-pages@v5
         with:
