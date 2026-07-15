@@ -57,6 +57,16 @@ interface VenueDefault {
   tripType: string;
 }
 
+interface HistoryRow {
+  venue: string;
+  people: string;
+  fee: string;
+  from: string;
+  to: string;
+  tripType: string;
+  transport: number;
+}
+
 let accessToken: string | null = null;
 let tokenClient: TokenClient | null = null;
 let spreadsheetId = "";
@@ -69,6 +79,8 @@ let lastRowNumber = 1;
 let lastDate: string | null = null;
 let venueDefaults = new Map<string, VenueDefault>();
 let fareByRoute = new Map<string, number>();
+/** Aggregated across every レッスン売上◯月 tab, so autofill/autocomplete works even in a brand-new month sheet. */
+let historyRows: HistoryRow[] = [];
 const dirtyFields = new Set<string>();
 
 function loadSettings() {
@@ -213,6 +225,8 @@ async function loadSheetData(title: string) {
     headerIndex[h] = i;
   });
 
+  computeLastDate();
+  await loadHistoryAcrossMonths(token);
   buildAutofillData();
   renderDatalists();
   renderRecentTable();
@@ -226,34 +240,61 @@ function cell(row: any[], header: string): string {
   return v === undefined || v === null ? "" : String(v);
 }
 
+function computeLastDate() {
+  lastDate = null;
+  for (const row of dataRows) {
+    const date = cell(row, "日付");
+    if (date) lastDate = date;
+  }
+}
+
+/** Pulls every レッスン売上◯月 tab so autofill/autocomplete has data even in a month sheet that's still empty. */
+async function loadHistoryAcrossMonths(token: string) {
+  const monthSheets = sheets.filter((s) => MONTH_SHEET_RE.test(s.title)).sort((a, b) => a.index - b.index);
+  const all: HistoryRow[] = [];
+  for (const s of monthSheets) {
+    try {
+      const values = s.title === currentSheet?.title ? [headers, ...dataRows] : await getSheetValues(token, spreadsheetId, s.title);
+      const hdr = values[0] ?? [];
+      const idx: Record<string, number> = {};
+      hdr.forEach((h: string, i: number) => (idx[h] = i));
+      const get = (row: any[], name: string) => {
+        const i = idx[name];
+        if (i === undefined) return "";
+        const v = row[i];
+        return v === undefined || v === null ? "" : String(v);
+      };
+      for (const row of values.slice(1)) {
+        all.push({
+          venue: get(row, "場所"),
+          people: get(row, "人"),
+          fee: get(row, "場所代"),
+          from: get(row, "出発駅"),
+          to: get(row, "到着駅"),
+          tripType: get(row, "往復・片道") || "片道",
+          transport: Number(get(row, "交通費")) || 0,
+        });
+      }
+    } catch (err) {
+      console.warn(`failed to load history from ${s.title}`, err);
+    }
+  }
+  historyRows = all;
+}
+
 function buildAutofillData() {
   venueDefaults = new Map();
   fareByRoute = new Map();
-  lastDate = null;
 
-  for (const row of dataRows) {
-    const venue = cell(row, "場所");
-    if (venue) {
-      venueDefaults.set(venue, {
-        fee: cell(row, "場所代"),
-        from: cell(row, "出発駅"),
-        to: cell(row, "到着駅"),
-        tripType: cell(row, "往復・片道") || "片道",
-      });
+  for (const r of historyRows) {
+    if (r.venue) {
+      venueDefaults.set(r.venue, { fee: r.fee, from: r.from, to: r.to, tripType: r.tripType || "片道" });
     }
-
-    const from = cell(row, "出発駅");
-    const to = cell(row, "到着駅");
-    const tripType = cell(row, "往復・片道") || "片道";
-    const transportRaw = Number(cell(row, "交通費")) || 0;
-    if (from && to && transportRaw > 0) {
-      const oneWayFare = tripType === "往復" ? transportRaw / 2 : transportRaw;
-      fareByRoute.set(`${from}→${to}`, oneWayFare);
-      fareByRoute.set(`${to}→${from}`, oneWayFare);
+    if (r.from && r.to && r.transport > 0) {
+      const oneWayFare = r.tripType === "往復" ? r.transport / 2 : r.transport;
+      fareByRoute.set(`${r.from}→${r.to}`, oneWayFare);
+      fareByRoute.set(`${r.to}→${r.from}`, oneWayFare);
     }
-
-    const date = cell(row, "日付");
-    if (date) lastDate = date;
   }
 }
 
@@ -272,15 +313,11 @@ function renderDatalists() {
   const venues = new Set<string>();
   const people = new Set<string>();
   const stations = new Set<string>();
-  for (const row of dataRows) {
-    const v = cell(row, "場所");
-    if (v) venues.add(v);
-    const p = cell(row, "人");
-    if (p) people.add(p);
-    const from = cell(row, "出発駅");
-    if (from) stations.add(from);
-    const to = cell(row, "到着駅");
-    if (to) stations.add(to);
+  for (const r of historyRows) {
+    if (r.venue) venues.add(r.venue);
+    if (r.people) people.add(r.people);
+    if (r.from) stations.add(r.from);
+    if (r.to) stations.add(r.to);
   }
   fillDatalist(venueList, venues);
   fillDatalist(peopleList, people);
