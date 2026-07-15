@@ -305,6 +305,7 @@ function buildAutofillData() {
   }
 }
 
+/** Fills 交通費 from fares learned from sheet history, keyed purely by 出発駅→到着駅 (not tied to 場所). */
 function applyTransportAutofill() {
   if (dirtyFields.has("transport")) return;
   const from = fFromStation.value.trim();
