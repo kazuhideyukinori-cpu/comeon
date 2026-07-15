@@ -29,7 +29,14 @@
               スプレッドシートID
               <input id="spreadsheet-id-input" type="text" placeholder="スプレッドシートIDを入力" />
             </label>
+            <label class="form-field">
+              運賃検索プロキシURL（任意）
+              <input id="fare-proxy-url-input" type="text" placeholder="https://xxxx.workers.dev" />
+            </label>
             <button id="save-settings-btn" class="btn btn-secondary" type="button">保存</button>
+            <p class="option-note">
+              運賃検索プロキシURLは任意です。設定すると、履歴に運賃データがない区間だけ外部の運賃APIに問い合わせます（README参照）。未設定でも、過去の入力から学習した運賃の自動計算は動作します。
+            </p>
             <p class="option-note">
               初回のみ、Google Cloud で作成した OAuth クライアントIDを入力してください（README参照）。この端末のブラウザにのみ保存されます。
             </p>
@@ -104,7 +111,12 @@
                   <option value="往復">往復</option>
                 </select>
               </label>
+              <div class="form-field">
+                &nbsp;
+                <button id="fare-lookup-btn" class="btn btn-ghost" type="button">🔍 運賃を再検索</button>
+              </div>
             </div>
+            <p id="fare-lookup-status" class="status-line"></p>
             <button id="submit-btn" class="btn btn-primary btn-large" type="submit">シートに追加する</button>
           </form>
 
