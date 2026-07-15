@@ -18,7 +18,6 @@ const settingsToggle = document.querySelector<HTMLButtonElement>("#settings-togg
 const settingsBody = document.querySelector<HTMLElement>("#settings-body")!;
 const clientIdInput = document.querySelector<HTMLInputElement>("#client-id-input")!;
 const spreadsheetIdInput = document.querySelector<HTMLInputElement>("#spreadsheet-id-input")!;
-const fareProxyUrlInput = document.querySelector<HTMLInputElement>("#fare-proxy-url-input")!;
 const saveSettingsBtn = document.querySelector<HTMLButtonElement>("#save-settings-btn")!;
 
 const loginBtn = document.querySelector<HTMLButtonElement>("#login-btn")!;
@@ -41,8 +40,6 @@ const fTransport = document.querySelector<HTMLInputElement>("#f-transport")!;
 const fFromStation = document.querySelector<HTMLInputElement>("#f-from-station")!;
 const fToStation = document.querySelector<HTMLInputElement>("#f-to-station")!;
 const fTripType = document.querySelector<HTMLSelectElement>("#f-trip-type")!;
-const fareLookupBtn = document.querySelector<HTMLButtonElement>("#fare-lookup-btn")!;
-const fareLookupStatus = document.querySelector<HTMLElement>("#fare-lookup-status")!;
 const submitBtn = document.querySelector<HTMLButtonElement>("#submit-btn")!;
 const submitStatus = document.querySelector<HTMLElement>("#submit-status")!;
 
@@ -89,7 +86,6 @@ const dirtyFields = new Set<string>();
 function loadSettings() {
   clientIdInput.value = localStorage.getItem("lse.clientId") ?? "";
   spreadsheetIdInput.value = localStorage.getItem("lse.spreadsheetId") ?? DEFAULT_SPREADSHEET_ID;
-  fareProxyUrlInput.value = localStorage.getItem("lse.fareProxyUrl") ?? "";
   spreadsheetId = spreadsheetIdInput.value.trim();
 }
 
@@ -135,7 +131,6 @@ settingsToggle.addEventListener("click", () => {
 saveSettingsBtn.addEventListener("click", () => {
   localStorage.setItem("lse.clientId", clientIdInput.value.trim());
   localStorage.setItem("lse.spreadsheetId", spreadsheetIdInput.value.trim());
-  localStorage.setItem("lse.fareProxyUrl", fareProxyUrlInput.value.trim());
   spreadsheetId = spreadsheetIdInput.value.trim();
   tokenClient = null;
   setStatus(authStatus, "設定を保存しました。ログインしてください。", "ok");
@@ -310,7 +305,7 @@ function buildAutofillData() {
   }
 }
 
-/** Free, local-only: fills 交通費 from fares already learned from sheet history. */
+/** Fills 交通費 from fares learned from sheet history, keyed purely by 出発駅→到着駅 (not tied to 場所). */
 function applyTransportAutofill() {
   if (dirtyFields.has("transport")) return;
   const from = fFromStation.value.trim();
@@ -318,52 +313,8 @@ function applyTransportAutofill() {
   if (!from || !to) return;
   const oneWayFare = fareByRoute.get(`${from}→${to}`);
   if (oneWayFare === undefined) return;
-  setTransportFromOneWay(oneWayFare);
-}
-
-function setTransportFromOneWay(oneWayFare: number) {
   const amount = fTripType.value === "往復" ? oneWayFare * 2 : oneWayFare;
   fTransport.value = String(Math.round(amount));
-}
-
-/** Paid fallback: only called when settling on a station (blur/venue-select), and only if history has no fare for the route yet. */
-function maybeLookupFareFromApi() {
-  if (dirtyFields.has("transport")) return;
-  const from = fFromStation.value.trim();
-  const to = fToStation.value.trim();
-  if (!from || !to) return;
-  if (fareByRoute.has(`${from}→${to}`)) return;
-  const proxyUrl = fareProxyUrlInput.value.trim();
-  if (!proxyUrl) return;
-  void fetchFareFromApiAndApply(proxyUrl, from, to);
-}
-
-let fareLookupSeq = 0;
-async function fetchFareFromApiAndApply(proxyUrl: string, from: string, to: string) {
-  const seq = ++fareLookupSeq;
-  setStatus(fareLookupStatus, "外部APIで運賃を検索中…", "");
-  try {
-    const url = `${proxyUrl.replace(/\/$/, "")}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
-    const res = await fetch(url);
-    const data = await res.json().catch(() => null);
-    if (!res.ok || !data) {
-      throw new Error(data?.error ?? `HTTP ${res.status}`);
-    }
-    const oneWayFare = Number(data.oneWayFare);
-    if (!Number.isFinite(oneWayFare) || oneWayFare <= 0) {
-      throw new Error("運賃を取得できませんでした");
-    }
-    if (seq !== fareLookupSeq) return; // a newer lookup superseded this one
-    fareByRoute.set(`${from}→${to}`, oneWayFare);
-    fareByRoute.set(`${to}→${from}`, oneWayFare);
-    if (dirtyFields.has("transport")) return;
-    if (fFromStation.value.trim() !== from || fToStation.value.trim() !== to) return;
-    setTransportFromOneWay(oneWayFare);
-    setStatus(fareLookupStatus, `運賃APIから取得しました（片道 ¥${Math.round(oneWayFare)}）`, "ok");
-  } catch (err) {
-    if (seq !== fareLookupSeq) return;
-    setStatus(fareLookupStatus, `運賃検索エラー: ${err instanceof Error ? err.message : String(err)}`, "error");
-  }
 }
 
 function renderDatalists() {
@@ -419,7 +370,6 @@ fVenue.addEventListener("input", () => {
     if (!dirtyFields.has("trip")) fTripType.value = def.tripType || "片道";
   }
   applyTransportAutofill();
-  maybeLookupFareFromApi();
 });
 
 fVenueFee.addEventListener("input", () => dirtyFields.add("fee"));
@@ -427,32 +377,15 @@ fFromStation.addEventListener("input", () => {
   dirtyFields.add("from");
   applyTransportAutofill();
 });
-fFromStation.addEventListener("blur", maybeLookupFareFromApi);
 fToStation.addEventListener("input", () => {
   dirtyFields.add("to");
   applyTransportAutofill();
 });
-fToStation.addEventListener("blur", maybeLookupFareFromApi);
 fTripType.addEventListener("input", () => {
   dirtyFields.add("trip");
   applyTransportAutofill();
 });
 fTransport.addEventListener("input", () => dirtyFields.add("transport"));
-
-fareLookupBtn.addEventListener("click", () => {
-  const from = fFromStation.value.trim();
-  const to = fToStation.value.trim();
-  const proxyUrl = fareProxyUrlInput.value.trim();
-  if (!from || !to) {
-    setStatus(fareLookupStatus, "出発駅・到着駅を入力してください。", "error");
-    return;
-  }
-  if (!proxyUrl) {
-    setStatus(fareLookupStatus, "⚙ 接続設定で運賃検索プロキシURLを設定してください。", "error");
-    return;
-  }
-  void fetchFareFromApiAndApply(proxyUrl, from, to);
-});
 
 function todayIso(): string {
   const d = new Date();
@@ -536,7 +469,6 @@ function resetFormForNextEntry() {
   fToStation.value = "";
   fTripType.value = "片道";
   dirtyFields.clear();
-  setStatus(fareLookupStatus, "", "");
   fVenue.focus();
 }
 
