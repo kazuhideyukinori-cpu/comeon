@@ -425,13 +425,14 @@ entryForm.addEventListener("submit", async (e) => {
       const idx = headerIndex[name];
       if (idx !== undefined) row[idx] = value;
     };
+    const numOrBlank = (value: string) => (value.trim() === "" ? "" : Number(value));
     set("日付", dateCell);
     set("場所", fVenue.value.trim());
     set("人", fPeople.value.trim());
-    set("時間", Number(fHours.value));
-    set("売上", Number(fSales.value));
-    set("場所代", Number(fVenueFee.value || 0));
-    set("交通費", Number(fTransport.value || 0));
+    set("時間", numOrBlank(fHours.value));
+    set("売上", numOrBlank(fSales.value));
+    set("場所代", numOrBlank(fVenueFee.value));
+    set("交通費", numOrBlank(fTransport.value));
     set("出発駅", fFromStation.value.trim());
     set("到着駅", fToStation.value.trim());
     set("往復・片道", fTripType.value);
