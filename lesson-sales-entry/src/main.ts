@@ -288,7 +288,14 @@ function buildAutofillData() {
 
   for (const r of historyRows) {
     if (r.venue) {
-      venueDefaults.set(r.venue, { fee: r.fee, from: r.from, to: r.to, tripType: r.tripType || "片道" });
+      // Merge per-field so a recent row with a blank station/fee doesn't blank out an earlier good value.
+      const existing = venueDefaults.get(r.venue) ?? { fee: "", from: "", to: "", tripType: "片道" };
+      venueDefaults.set(r.venue, {
+        fee: r.fee || existing.fee,
+        from: r.from || existing.from,
+        to: r.to || existing.to,
+        tripType: r.tripType || existing.tripType,
+      });
     }
     if (r.from && r.to && r.transport > 0) {
       const oneWayFare = r.tripType === "往復" ? r.transport / 2 : r.transport;
