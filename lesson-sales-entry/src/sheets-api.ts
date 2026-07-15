@@ -62,7 +62,7 @@ export async function updateRow(
   const range = encodeURIComponent(`${quoteSheetTitle(sheetTitle)}!A${rowNumber1Indexed}:${lastCol}${rowNumber1Indexed}`);
   await call(token, `/${spreadsheetId}/values/${range}?valueInputOption=USER_ENTERED`, {
     method: "PUT",
-    body: JSON.stringify({ range: `${sheetTitle}!A${rowNumber1Indexed}:${lastCol}${rowNumber1Indexed}`, values: [values] }),
+    body: JSON.stringify({ values: [values] }),
   });
 }
 
