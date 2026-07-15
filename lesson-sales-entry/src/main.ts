@@ -68,6 +68,7 @@ let dataRows: any[][] = [];
 let lastRowNumber = 1;
 let lastDate: string | null = null;
 let venueDefaults = new Map<string, VenueDefault>();
+let fareByRoute = new Map<string, number>();
 const dirtyFields = new Set<string>();
 
 function loadSettings() {
@@ -227,6 +228,7 @@ function cell(row: any[], header: string): string {
 
 function buildAutofillData() {
   venueDefaults = new Map();
+  fareByRoute = new Map();
   lastDate = null;
 
   for (const row of dataRows) {
@@ -239,9 +241,31 @@ function buildAutofillData() {
         tripType: cell(row, "往復・片道") || "片道",
       });
     }
+
+    const from = cell(row, "出発駅");
+    const to = cell(row, "到着駅");
+    const tripType = cell(row, "往復・片道") || "片道";
+    const transportRaw = Number(cell(row, "交通費")) || 0;
+    if (from && to && transportRaw > 0) {
+      const oneWayFare = tripType === "往復" ? transportRaw / 2 : transportRaw;
+      fareByRoute.set(`${from}→${to}`, oneWayFare);
+      fareByRoute.set(`${to}→${from}`, oneWayFare);
+    }
+
     const date = cell(row, "日付");
     if (date) lastDate = date;
   }
+}
+
+function applyTransportAutofill() {
+  if (dirtyFields.has("transport")) return;
+  const from = fFromStation.value.trim();
+  const to = fToStation.value.trim();
+  if (!from || !to) return;
+  const oneWayFare = fareByRoute.get(`${from}→${to}`);
+  if (oneWayFare === undefined) return;
+  const amount = fTripType.value === "往復" ? oneWayFare * 2 : oneWayFare;
+  fTransport.value = String(Math.round(amount));
 }
 
 function renderDatalists() {
@@ -294,17 +318,29 @@ function renderRecentTable() {
 
 fVenue.addEventListener("input", () => {
   const def = venueDefaults.get(fVenue.value.trim());
-  if (!def) return;
-  if (!dirtyFields.has("fee")) fVenueFee.value = String(def.fee || 0);
-  if (!dirtyFields.has("from")) fFromStation.value = def.from;
-  if (!dirtyFields.has("to")) fToStation.value = def.to;
-  if (!dirtyFields.has("trip")) fTripType.value = def.tripType || "片道";
+  if (def) {
+    if (!dirtyFields.has("fee")) fVenueFee.value = String(def.fee || 0);
+    if (!dirtyFields.has("from")) fFromStation.value = def.from;
+    if (!dirtyFields.has("to")) fToStation.value = def.to;
+    if (!dirtyFields.has("trip")) fTripType.value = def.tripType || "片道";
+  }
+  applyTransportAutofill();
 });
 
 fVenueFee.addEventListener("input", () => dirtyFields.add("fee"));
-fFromStation.addEventListener("input", () => dirtyFields.add("from"));
-fToStation.addEventListener("input", () => dirtyFields.add("to"));
-fTripType.addEventListener("input", () => dirtyFields.add("trip"));
+fFromStation.addEventListener("input", () => {
+  dirtyFields.add("from");
+  applyTransportAutofill();
+});
+fToStation.addEventListener("input", () => {
+  dirtyFields.add("to");
+  applyTransportAutofill();
+});
+fTripType.addEventListener("input", () => {
+  dirtyFields.add("trip");
+  applyTransportAutofill();
+});
+fTransport.addEventListener("input", () => dirtyFields.add("transport"));
 
 function todayIso(): string {
   const d = new Date();
