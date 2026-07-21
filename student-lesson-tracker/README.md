@@ -28,14 +28,14 @@
 
 ### 2. Firestore のセキュリティルールを設定
 
-「Firestore Database」→「ルール」タブで、以下を貼り付けて公開してください（`coach@example.com` は自分のGoogleアカウントのメールアドレスに書き換えます）。
+「Firestore Database」→「ルール」タブで、以下を貼り付けて公開してください。
 
 ```
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function isCoach() {
-      return request.auth != null && request.auth.token.email == 'coach@example.com';
+      return request.auth != null && request.auth.token.email == 'kazuhide.yukinori@gmail.com';
     }
 
     match /students/{studentId} {
