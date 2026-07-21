@@ -7,6 +7,7 @@ on:
       - "auto-video-editor/**"
       - "table-tennis-scorer/**"
       - "lesson-sales-entry/**"
+      - "student-lesson-tracker/**"
       - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
@@ -32,6 +33,7 @@ jobs:
             auto-video-editor/package-lock.json
             table-tennis-scorer/package-lock.json
             lesson-sales-entry/package-lock.json
+            student-lesson-tracker/package-lock.json
 
       - name: Build AUTO CUT
         working-directory: auto-video-editor
@@ -51,6 +53,12 @@ jobs:
           npm ci
           npm run build
 
+      - name: Build 卓球レッスンノート
+        working-directory: student-lesson-tracker
+        run: |
+          npm ci
+          npm run build
+
       - name: Assemble combined site
         run: |
           mkdir -p site
@@ -59,6 +67,8 @@ jobs:
           cp -r table-tennis-scorer/dist/. site/table-tennis-scorer/
           mkdir -p site/lesson-sales-entry
           cp -r lesson-sales-entry/dist/. site/lesson-sales-entry/
+          mkdir -p site/student-lesson-tracker
+          cp -r student-lesson-tracker/dist/. site/student-lesson-tracker/
 
       - uses: actions/configure-pages@v5
         with:
