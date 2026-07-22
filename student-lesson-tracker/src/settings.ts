@@ -3,9 +3,10 @@ import type { AppSettings } from "./types.ts";
 const STORAGE_KEY = "student-lesson-tracker:settings";
 
 const DEFAULT_SETTINGS: AppSettings = {
+  googleClientId: "",
+  spreadsheetId: "",
   anthropicApiKey: "",
   anthropicModel: "claude-sonnet-5",
-  coachEmail: "",
 };
 
 export function loadSettings(): AppSettings {
