@@ -14,6 +14,7 @@
 var SHEET_STUDENTS = "生徒";
 var SHEET_LESSONS = "レッスン";
 var SHEET_MATCHES = "試合結果";
+var SHEET_RATINGS = "レーティング";
 
 function doGet(e) {
   var studentId = e.parameter.studentId;
@@ -39,12 +40,20 @@ function doGet(e) {
       reflection: row["反省・感想"],
     };
   });
+  var ratings = filterRowsByStudentId_(ss.getSheetByName(SHEET_RATINGS), studentId).map(function (row) {
+    return {
+      recordedAt: row["記録日時"],
+      rating: Number(row["レーティング"]) || 0,
+      memo: row["メモ"],
+    };
+  });
 
   return jsonResponse_({
     name: student["名前"],
     focusPoints: student["意識するポイント"] || "",
     lessons: lessons,
     matches: matches,
+    ratings: ratings,
   });
 }
 
@@ -56,8 +65,8 @@ function doPost(e) {
     return jsonResponse_({ error: "リクエストの形式が正しくありません。" });
   }
 
-  if (!data.studentId || !data.reflection) {
-    return jsonResponse_({ error: "必須項目（生徒ID・反省点/感想）が不足しています。" });
+  if (!data.studentId) {
+    return jsonResponse_({ error: "生徒IDが指定されていません。" });
   }
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -66,9 +75,22 @@ function doPost(e) {
     return jsonResponse_({ error: "生徒が見つかりませんでした。リンクをコーチに確認してください。" });
   }
 
-  var sheet = ss.getSheetByName(SHEET_MATCHES);
   var now = Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), "yyyy/MM/dd HH:mm");
-  sheet.appendRow([Utilities.getUuid(), data.studentId, now, data.matchDate || "", data.opponent || "", data.result || "", data.reflection]);
+
+  if (data.type === "rating") {
+    if (data.rating === undefined || data.rating === null || data.rating === "") {
+      return jsonResponse_({ error: "レーティングの値が指定されていません。" });
+    }
+    var ratingSheet = ss.getSheetByName(SHEET_RATINGS);
+    ratingSheet.appendRow([Utilities.getUuid(), data.studentId, now, Number(data.rating), data.memo || ""]);
+    return jsonResponse_({ ok: true });
+  }
+
+  if (!data.reflection) {
+    return jsonResponse_({ error: "必須項目（反省点/感想）が不足しています。" });
+  }
+  var matchSheet = ss.getSheetByName(SHEET_MATCHES);
+  matchSheet.appendRow([Utilities.getUuid(), data.studentId, now, data.matchDate || "", data.opponent || "", data.result || "", data.reflection]);
 
   return jsonResponse_({ ok: true });
 }

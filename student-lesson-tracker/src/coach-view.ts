@@ -1,8 +1,10 @@
 import {
   addLesson,
+  addRating,
   createStudent,
   listLessons,
   listMatches,
+  listRatings,
   listStudents,
   updateFocusPoints,
 } from "./repo.ts";
@@ -11,7 +13,8 @@ import { summarizeLesson, AiError } from "./ai.ts";
 import { isSpeechRecognitionSupported, VoiceTranscriber } from "./speech.ts";
 import { loadSettings, saveSettings } from "./settings.ts";
 import { escapeHtml } from "./util.ts";
-import type { LessonEntry, MatchEntry, Student } from "./types.ts";
+import { renderRatingChart } from "./rating-chart.ts";
+import type { LessonEntry, MatchEntry, RatingEntry, Student } from "./types.ts";
 
 const SHELL = `
   <header class="topbar">
@@ -104,6 +107,22 @@ const SHELL = `
 
       <h3>③ 試合結果・反省（生徒が個別ページから入力）</h3>
       <div id="match-history"></div>
+
+      <h3>④ レーティング</h3>
+      <div class="form-row">
+        <label class="form-field">
+          レーティング
+          <input id="rating-value-input" type="number" step="1" inputmode="numeric" placeholder="例）1500" />
+        </label>
+        <label class="form-field">
+          メモ（任意）
+          <input id="rating-memo-input" type="text" placeholder="例）〇〇オープン大会" />
+        </label>
+        <button id="add-rating-btn" class="btn btn-ghost" type="button" style="align-self:flex-end">＋ 記録を追加</button>
+      </div>
+      <p id="rating-status" class="status-line"></p>
+      <div id="rating-chart-wrap"></div>
+      <div id="rating-history"></div>
     </section>
   </main>
   <footer class="footer">
@@ -152,12 +171,20 @@ export function mountCoachView(root: HTMLElement): void {
   const lessonHistoryEl = root.querySelector<HTMLElement>("#lesson-history")!;
   const matchHistoryEl = root.querySelector<HTMLElement>("#match-history")!;
 
+  const ratingValueInput = root.querySelector<HTMLInputElement>("#rating-value-input")!;
+  const ratingMemoInput = root.querySelector<HTMLInputElement>("#rating-memo-input")!;
+  const addRatingBtn = root.querySelector<HTMLButtonElement>("#add-rating-btn")!;
+  const ratingStatus = root.querySelector<HTMLElement>("#rating-status")!;
+  const ratingChartWrap = root.querySelector<HTMLElement>("#rating-chart-wrap")!;
+  const ratingHistoryEl = root.querySelector<HTMLElement>("#rating-history")!;
+
   let settings = loadSettings();
   let accessToken: string | null = null;
   let tokenClient: TokenClient | null = null;
   let students: Student[] = [];
   let selectedStudent: Student | null = null;
   let recentLessons: LessonEntry[] = [];
+  let recentRatings: RatingEntry[] = [];
   let transcriber: VoiceTranscriber | null = null;
   let isRecording = false;
 
@@ -309,6 +336,27 @@ export function mountCoachView(root: HTMLElement): void {
       .join("");
   }
 
+  function renderRatingHistory(ratings: RatingEntry[]): void {
+    if (ratings.length === 0) {
+      ratingChartWrap.innerHTML = "";
+      ratingHistoryEl.innerHTML = `<p class="empty-note">まだレーティングの記録がありません。</p>`;
+      return;
+    }
+    ratingChartWrap.innerHTML = renderRatingChart(ratings);
+    ratingHistoryEl.innerHTML = ratings
+      .map(
+        (r) => `
+        <div class="entry-card">
+          <div class="entry-card-header">
+            <span class="entry-card-date">${escapeHtml(r.recordedAt)}</span>
+            <span class="match-badge">${r.rating}</span>
+          </div>
+          ${r.memo ? `<div class="entry-card-body">${escapeHtml(r.memo)}</div>` : ""}
+        </div>`,
+      )
+      .join("");
+  }
+
   async function selectStudent(student: Student): Promise<void> {
     stopRecording();
     selectedStudent = student;
@@ -321,18 +369,26 @@ export function mountCoachView(root: HTMLElement): void {
     aiPreview.classList.add("hidden");
     lessonStatus.textContent = "";
     focusStatus.textContent = "";
+    ratingStatus.textContent = "";
+    ratingValueInput.value = "";
+    ratingMemoInput.value = "";
     lessonHistoryEl.innerHTML = `<p class="empty-note">読み込み中…</p>`;
     matchHistoryEl.innerHTML = `<p class="empty-note">読み込み中…</p>`;
+    ratingChartWrap.innerHTML = "";
+    ratingHistoryEl.innerHTML = `<p class="empty-note">読み込み中…</p>`;
 
     try {
       const token = requireToken();
-      const [lessons, matches] = await Promise.all([
+      const [lessons, matches, ratings] = await Promise.all([
         listLessons(token, settings.spreadsheetId, student.id),
         listMatches(token, settings.spreadsheetId, student.id),
+        listRatings(token, settings.spreadsheetId, student.id),
       ]);
       recentLessons = lessons;
+      recentRatings = ratings;
       renderLessonHistory(lessons);
       renderMatchHistory(matches);
+      renderRatingHistory(ratings);
     } catch (err) {
       handleApiError(err, lessonStatus);
     }
@@ -462,6 +518,29 @@ export function mountCoachView(root: HTMLElement): void {
       handleApiError(err, focusStatus);
     } finally {
       saveFocusBtn.disabled = false;
+    }
+  });
+
+  addRatingBtn.addEventListener("click", async () => {
+    if (!selectedStudent) return;
+    const rating = Number(ratingValueInput.value);
+    if (!Number.isFinite(rating) || ratingValueInput.value.trim() === "") {
+      setStatus(ratingStatus, "レーティングの値を入力してください。", "error");
+      return;
+    }
+    addRatingBtn.disabled = true;
+    try {
+      const token = requireToken();
+      await addRating(token, settings.spreadsheetId, selectedStudent.id, rating, ratingMemoInput.value.trim());
+      ratingValueInput.value = "";
+      ratingMemoInput.value = "";
+      setStatus(ratingStatus, "記録しました。", "ok");
+      recentRatings = await listRatings(token, settings.spreadsheetId, selectedStudent.id);
+      renderRatingHistory(recentRatings);
+    } catch (err) {
+      handleApiError(err, ratingStatus);
+    } finally {
+      addRatingBtn.disabled = false;
     }
   });
 

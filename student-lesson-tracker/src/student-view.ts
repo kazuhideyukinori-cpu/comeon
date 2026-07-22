@@ -1,6 +1,8 @@
-import { fetchStudentData, isConfigured, submitMatch, StudentApiError } from "./student-api.ts";
-import type { LessonEntry, MatchEntry } from "./types.ts";
-import { escapeHtml, todayIso } from "./util.ts";
+import { fetchStudentData, isConfigured, submitMatch, submitRating, StudentApiError } from "./student-api.ts";
+import type { StudentPageData } from "./student-api.ts";
+import type { LessonEntry, MatchEntry, RatingEntry } from "./types.ts";
+import { escapeHtml, nowDisplay, todayIso } from "./util.ts";
+import { renderRatingChart } from "./rating-chart.ts";
 
 const SHELL = `
   <header class="topbar">
@@ -24,7 +26,7 @@ export async function mountStudentView(root: HTMLElement, studentId: string): Pr
     return;
   }
 
-  let data;
+  let data: StudentPageData;
   try {
     data = await fetchStudentData(studentId);
   } catch (err) {
@@ -74,6 +76,29 @@ export async function mountStudentView(root: HTMLElement, studentId: string): Pr
       <h3>過去の試合結果</h3>
       <div id="match-history"></div>
     </section>
+
+    <section class="card">
+      <h2>④ レーティングを記録する</h2>
+      <p class="option-note">大会や卓球場の測定などで分かった最新のレーティングを記録して、成長の推移を見返せます。</p>
+      <form id="rating-form">
+        <div class="form-row">
+          <label class="form-field">
+            レーティング
+            <input id="rating-value" type="number" step="1" inputmode="numeric" placeholder="例）1500" required />
+          </label>
+          <label class="form-field">
+            メモ（任意）
+            <input id="rating-memo" type="text" placeholder="例）〇〇オープン大会" />
+          </label>
+        </div>
+        <button id="rating-submit-btn" class="btn btn-primary btn-large" type="submit">記録する</button>
+      </form>
+      <p id="rating-status" class="status-line"></p>
+
+      <div id="rating-chart-wrap"></div>
+      <h3>レーティングの履歴</h3>
+      <div id="rating-history"></div>
+    </section>
   `;
 
   const focusPointsEl = main.querySelector<HTMLElement>("#focus-points")!;
@@ -86,6 +111,14 @@ export async function mountStudentView(root: HTMLElement, studentId: string): Pr
   const matchSubmitBtn = main.querySelector<HTMLButtonElement>("#match-submit-btn")!;
   const matchStatus = main.querySelector<HTMLElement>("#match-status")!;
   const matchHistoryEl = main.querySelector<HTMLElement>("#match-history")!;
+
+  const ratingForm = main.querySelector<HTMLFormElement>("#rating-form")!;
+  const ratingValueInput = main.querySelector<HTMLInputElement>("#rating-value")!;
+  const ratingMemoInput = main.querySelector<HTMLInputElement>("#rating-memo")!;
+  const ratingSubmitBtn = main.querySelector<HTMLButtonElement>("#rating-submit-btn")!;
+  const ratingStatus = main.querySelector<HTMLElement>("#rating-status")!;
+  const ratingChartWrap = main.querySelector<HTMLElement>("#rating-chart-wrap")!;
+  const ratingHistoryEl = main.querySelector<HTMLElement>("#rating-history")!;
 
   matchDateInput.value = todayIso();
   focusPointsEl.textContent = data.focusPoints.trim() || "まだ記録がありません。次のレッスンをお楽しみに！";
@@ -126,8 +159,30 @@ export async function mountStudentView(root: HTMLElement, studentId: string): Pr
       .join("");
   }
 
+  function renderRatingHistory(ratings: RatingEntry[]): void {
+    if (ratings.length === 0) {
+      ratingChartWrap.innerHTML = "";
+      ratingHistoryEl.innerHTML = `<p class="empty-note">まだレーティングの記録がありません。</p>`;
+      return;
+    }
+    ratingChartWrap.innerHTML = renderRatingChart(ratings);
+    ratingHistoryEl.innerHTML = ratings
+      .map(
+        (r) => `
+        <div class="entry-card">
+          <div class="entry-card-header">
+            <span class="entry-card-date">${escapeHtml(r.recordedAt)}</span>
+            <span class="match-badge">${r.rating}</span>
+          </div>
+          ${r.memo ? `<div class="entry-card-body">${escapeHtml(r.memo)}</div>` : ""}
+        </div>`,
+      )
+      .join("");
+  }
+
   renderLessonHistory(data.lessons);
   renderMatchHistory(data.matches);
+  renderRatingHistory(data.ratings);
 
   matchForm.addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -160,6 +215,30 @@ export async function mountStudentView(root: HTMLElement, studentId: string): Pr
       matchStatus.className = "status-line error";
     } finally {
       matchSubmitBtn.disabled = false;
+    }
+  });
+
+  ratingForm.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const rating = Number(ratingValueInput.value);
+    if (!Number.isFinite(rating)) return;
+    ratingSubmitBtn.disabled = true;
+    ratingStatus.textContent = "";
+    try {
+      const memo = ratingMemoInput.value.trim();
+      await submitRating(studentId, { rating, memo });
+      const newRating: RatingEntry = { recordedAt: nowDisplay(), rating, memo };
+      data.ratings = [newRating, ...data.ratings];
+      ratingValueInput.value = "";
+      ratingMemoInput.value = "";
+      ratingStatus.textContent = "記録しました。";
+      ratingStatus.className = "status-line ok";
+      renderRatingHistory(data.ratings);
+    } catch (err) {
+      ratingStatus.textContent = `記録に失敗しました: ${err instanceof Error ? err.message : String(err)}`;
+      ratingStatus.className = "status-line error";
+    } finally {
+      ratingSubmitBtn.disabled = false;
     }
   });
 }

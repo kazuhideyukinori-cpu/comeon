@@ -20,6 +20,12 @@ export interface MatchEntry {
   recordedAt: string;
 }
 
+export interface RatingEntry {
+  recordedAt: string;
+  rating: number;
+  memo: string;
+}
+
 export interface AppSettings {
   googleClientId: string;
   spreadsheetId: string;

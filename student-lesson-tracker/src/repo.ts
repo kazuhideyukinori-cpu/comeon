@@ -1,10 +1,11 @@
 import { appendRow, getSheetValues, updateRow } from "./sheets-api.ts";
-import type { LessonEntry, MatchEntry, Student } from "./types.ts";
+import type { LessonEntry, MatchEntry, RatingEntry, Student } from "./types.ts";
 import { generateId, nowDisplay } from "./util.ts";
 
 export const SHEET_STUDENTS = "生徒";
 export const SHEET_LESSONS = "レッスン";
 export const SHEET_MATCHES = "試合結果";
+export const SHEET_RATINGS = "レーティング";
 
 interface Row {
   values: string[];
@@ -97,4 +98,27 @@ export async function listMatches(token: string, spreadsheetId: string, studentI
       reflection: cell(headers, r.values, "反省・感想"),
     }))
     .reverse();
+}
+
+export async function listRatings(token: string, spreadsheetId: string, studentId: string): Promise<RatingEntry[]> {
+  const values = await getSheetValues(token, spreadsheetId, SHEET_RATINGS);
+  const { headers, rows } = toRows(values);
+  return rows
+    .filter((r) => cell(headers, r.values, "生徒ID") === studentId)
+    .map((r) => ({
+      recordedAt: cell(headers, r.values, "記録日時"),
+      rating: Number(cell(headers, r.values, "レーティング")) || 0,
+      memo: cell(headers, r.values, "メモ"),
+    }))
+    .reverse();
+}
+
+export async function addRating(
+  token: string,
+  spreadsheetId: string,
+  studentId: string,
+  rating: number,
+  memo: string,
+): Promise<void> {
+  await appendRow(token, spreadsheetId, SHEET_RATINGS, [generateId(), studentId, nowDisplay(), rating, memo]);
 }
