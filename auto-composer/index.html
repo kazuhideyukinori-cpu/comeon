@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AUTO COMPOSE — 全自動作曲アプリ</title>
+    <meta
+      name="description"
+      content="スタイルと長さを選ぶだけで、ブラウザだけでオリジナル楽曲を全自動で作曲。再生・WAV/MIDIダウンロードまでサーバー不要。"
+    />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">🎼</span>
+          <span class="brand-name">AUTO COMPOSE</span>
+        </div>
+        <p class="tagline">スタイルを選んでボタンを押すだけ。この端末だけで完結する全自動作曲。</p>
+      </header>
+
+      <main class="stage">
+        <section id="setup" class="setup">
+          <h2 class="section-title">1. スタイルを選ぶ</h2>
+          <div id="style-grid" class="style-grid"></div>
+
+          <h2 class="section-title">2. 長さを選ぶ</h2>
+          <div id="length-grid" class="chip-row"></div>
+
+          <h2 class="section-title">3. キー（任意）</h2>
+          <div class="key-row">
+            <select id="key-select" class="key-select"></select>
+            <p class="option-note">「おまかせ」を選ぶと毎回ランダムなキーで作曲します。</p>
+          </div>
+
+          <div class="controls">
+            <button id="compose-btn" class="btn btn-primary btn-large" type="button">
+              <span class="btn-icon">🎼</span> 自動で作曲する
+            </button>
+          </div>
+        </section>
+
+        <section id="workspace" class="workspace hidden">
+          <div class="track-card">
+            <div class="track-head">
+              <h3 id="track-title" class="track-title">—</h3>
+              <div id="track-chips" class="chip-list"></div>
+            </div>
+            <canvas id="piano-roll" class="piano-roll"></canvas>
+            <div class="player-bar">
+              <button id="play-btn" class="btn btn-primary" type="button">▶ 再生</button>
+              <span id="time-label" class="time-label">0:00 / 0:00</span>
+            </div>
+          </div>
+
+          <div class="export-row">
+            <button id="export-wav-btn" class="btn btn-secondary" type="button">🎵 WAVをダウンロード</button>
+            <button id="export-midi-btn" class="btn btn-secondary" type="button">🎹 MIDIをダウンロード</button>
+          </div>
+
+          <div id="progress-wrap" class="progress-wrap hidden">
+            <div class="progress-label">
+              <span id="progress-step">書き出し中…</span>
+            </div>
+            <div class="progress-bar">
+              <div id="progress-fill" class="progress-fill"></div>
+            </div>
+          </div>
+
+          <p id="status-line" class="status-line"></p>
+
+          <div class="controls">
+            <button id="regenerate-btn" class="btn btn-primary" type="button">
+              <span class="btn-icon">🔁</span> 同じ設定でもう一度作曲する
+            </button>
+            <button id="back-btn" class="btn btn-ghost" type="button">設定を変更する</button>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <p>作曲・再生・書き出しはすべてこの端末（ブラウザ）内で完結します。楽曲データはどこにも送信されません。</p>
+      </footer>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
